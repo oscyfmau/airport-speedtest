@@ -8,6 +8,35 @@
 
 ---
 
+## v4.8
+
+### 新增
+- 日志独立目录 `log/`（常量 `LOG_DIR`）；文件日志改为 **JSONL**：`log/测速日志_YYYYMMDD_HHMMSS.jsonl`，每行一个 JSON 对象 `{"ts","level","event","msg","data"}`；`JsonlFileHandler` 逐条 flush（强杀/关窗口不丢已写内容）
+- `new_run_log()`：每次测试运行新建独立 JSONL 文件（修复菜单多次运行混写同一文件的时间线混乱）
+- 结构化事件系统 `_ev(event, data)`（logger extra，控制台忽略、JSONL 记录），事件清单：
+  - 运行级：`run_start`（版本/Python 版本/平台/argv/模式/workers/fast/依赖版本）、`run_end`（耗时/节点数/产物路径）、`run_exception`、`uncaught_exception`（全局 `sys.excepthook` + main 兜底，完整 traceback）、`user_interrupt`（含中断阶段）
+  - 解析：`parse_done`（节点总数、按类型计数）、`fetch_fallback`（cloudscraper 回退 requests 的原因）
+  - TCP：`tcp_ping`（每节点结果）、`tcp_probe`（每候选可达性）
+  - 测速：`switch_node`、`yt_source_resolve`（直连/节点隧道/失败）、`yt_source_attempt`（每视频每次尝试）、`speed_conn`（每连接源域名/HTTP状态/字节）、`speed_conn_error`、`speed_abort_slow`、`speed_done`（延迟/平均/峰值/error）
+  - 流媒体：`streaming_done`（每节点解锁数）、`streaming_result`（每节点每平台明细）
+  - IP：`ip_done`（ip/风险分/类型/ASN/源）、`ip_source_attempt`（每个源每次尝试与失败原因）
+  - 其他：`retest_speed`、`retest_done`、`mihomo_start`、`mihomo_stop`、`worker_pool_start`、`mihomo_update`、`menu_choice`、`invalid_input`、`manual_subscribe_input`
+- `_pkg_version(name)`：importlib.metadata 读依赖版本；`_log_streaming_details`/`_log_ip_details`：串行与并行池两条路径共用
+- 中断提示明确化：中断时提示中断阶段并注明本次为不完整结果
+
+### 修改
+- requirements.txt 最低版本提升（防 Python 3.12 缺 cp312 wheel 触发源码编译失败）：`aiohttp>=3.9.5`、`PyYAML>=6.0.1`、`Pillow>=10.1.0`、`tqdm>=4.66.1`、`cloudscraper>=1.2.71`
+- run.bat：`where python` 找不到时回退 `py -3` 启动器；依赖安装改 `py -m pip`
+- `_try_fetch`：cloudscraper 回退 requests 时记录 `fetch_fallback` 事件
+
+### 修复
+- 标准测试（菜单2）流媒体路径核查确认无功能 bug（菜单2 → normal → full + 9 常用流媒体 + IP；`check_one_node_streaming(services=None)` 兜底 FULL 34 平台）；此前"没测到流媒体"系测试中途 Ctrl+C 中断导致（中断前的 JSON 流媒体为空），现由 `user_interrupt` 事件明确记录
+
+### 移除
+- 旧文本文件日志（`output/测速日志_*.log`），由 `log/*.jsonl` 取代
+
+---
+
 ## v4.7
 
 ### 新增

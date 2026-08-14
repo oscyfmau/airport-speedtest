@@ -7,7 +7,7 @@
 
 Airport subscription speed-test tool: pull all nodes from a subscription URL, test TCP latency, HTTP download speed, streaming unlock and IP risk per node, then generate a visual PNG report + JSON data.
 
-Version: v4.7 | Repository: https://github.com/oscyfmau/airport-speedtest
+Version: v4.8 | Repository: https://github.com/oscyfmau/airport-speedtest
 
 ## Preview
 
@@ -23,7 +23,7 @@ Version: v4.7 | Repository: https://github.com/oscyfmau/airport-speedtest
 3. **Run**:
    - Install Python 3.8+ ([python.org](https://www.python.org/downloads/), check "Add python.exe to PATH" during installation)
    - In the unzipped folder run `pip install -r core/requirements.txt`
-   - Double-click `run.bat` → select `1` Simple speed test in the menu → wait a few minutes → the PNG report opens automatically (report files are in the `output/` folder)
+   - Double-click `run.bat` → select `1` Simple speed test in the menu → wait a few minutes → the PNG report opens automatically (report files are in the `output/` folder, logs are in the `log/` folder)
 
 The mihomo core downloads automatically on first run to `bin/` (about 47MB) — no manual download needed.
 
@@ -36,7 +36,7 @@ The mihomo core downloads automatically on first run to `bin/` (about 47MB) — 
 - Streaming unlock detection: 34 platforms, 11 with dedicated detectors (incl. Bilibili TW/HK/MO, TikTok, Steam etc.)
 - IP risk: ipapi.is primary source with automatic fallback to ipwho.is / api.ip.sb
 - Automatically retests timed-out nodes before report generation; recovered nodes get a re-run speed test
-- Full logging: console INFO + file DEBUG (output/测速日志_*.log), subscription tokens auto-masked
+- JSON structured logging: console INFO (text) + file JSONL (`log/测速日志_*.jsonl`; every node / connection / streaming platform / IP attempt recorded; subscription tokens auto-masked)
 - Console progress bar refreshes every second; node flags show as country codes (e.g. [JP]) in the console, while the PNG report still shows the flags
 - Output: PNG visual report + JSON structured data
 
@@ -218,6 +218,9 @@ Just send the PNG report image in the `output/` folder (the visual report). JSON
 **The report didn't open automatically?**
 All report files are in the `output/` folder: double-click the latest `测速结果_*.png`, or select `5` in the menu to view the last result.
 
+**What should I do if it errors out?**
+Send the latest `测速日志_*.jsonl` from the `log/` folder; it records the runtime environment (Python version / dependency versions), every step, per-node details and the full traceback — no screenshots needed.
+
 ## Known Limitations
 
 - IP quality detection depends on free APIs (ipapi.is primary, ipwho.is / api.ip.sb fallback); sources without risk-control fields do not fabricate risk values (shown as `--`)
@@ -249,7 +252,8 @@ All report files are in the `output/` folder: double-click the latest `测速结
 │   ├── image.py         # image generation re-export
 │   └── requirements.txt # Python dependencies
 ├── bin/                 # mihomo core (auto-downloaded, not committed)
-└── output/              # PNG reports + JSON data + speed test logs (not committed)
+├── output/              # PNG reports + JSON data (not committed)
+└── log/                 # JSONL runtime logs (not committed; send files here when reporting errors)
 ```
 
 ## License

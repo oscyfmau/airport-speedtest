@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-机场测速工具 v4.7
+机场测速工具 v4.8
 订阅解析 → TCP Ping → HTTP测速 → 流媒体解锁 → IP风控 → PNG报告
 """
 
@@ -17,8 +17,10 @@ import subprocess
 import sys
 import tempfile
 import time
+import traceback
 import zipfile
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Optional
 from urllib.parse import urlparse, parse_qs, unquote
 
@@ -50,6 +52,7 @@ except ImportError:
 
 logger = logging.getLogger("speed_test")
 _LOG_FILE = ""
+_JSONL_HANDLER = None
 
 
 def _cleanup_stale_configs():
@@ -67,26 +70,101 @@ def _cleanup_stale_configs():
 
 
 def setup_logging() -> str:
-    """初始化日志：控制台 INFO + 文件 DEBUG（output/测速日志_*.log），返回日志文件路径"""
-    global _LOG_FILE
-    if logger.handlers:  # 已初始化
-        return _LOG_FILE
+    """初始化日志：控制台 INFO（文本）+ 文件 JSONL（log/测速日志_*.jsonl），返回日志文件路径"""
+    global _LOG_FILE, _JSONL_HANDLER
     _cleanup_stale_configs()
     logger.setLevel(logging.DEBUG)
-    fmt = logging.Formatter("%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S")
+
+    if logger.handlers:  # 已初始化（如菜单多次运行）：移除旧控制台 handler，避免重复输出
+        for h in list(logger.handlers):
+            logger.removeHandler(h)
+            try:
+                h.close()
+            except Exception:
+                pass
 
     ch = logging.StreamHandler()
     ch.setLevel(logging.INFO)
     ch.setFormatter(_ConsoleFormatter("%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S"))
     logger.addHandler(ch)
 
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    _LOG_FILE = os.path.join(OUTPUT_DIR, time.strftime("测速日志_%Y%m%d_%H%M%S.log"))
-    fh = logging.FileHandler(_LOG_FILE, encoding="utf-8")
-    fh.setLevel(logging.DEBUG)
-    fh.setFormatter(fmt)
-    logger.addHandler(fh)
+    _install_excepthook()
+    return new_run_log()
+
+
+def new_run_log() -> str:
+    """每次测试运行开始时新建 JSONL 日志文件（菜单多次运行不混写同一文件）"""
+    global _LOG_FILE, _JSONL_HANDLER
+    if _JSONL_HANDLER is not None:
+        logger.removeHandler(_JSONL_HANDLER)
+        _JSONL_HANDLER.close()
+    os.makedirs(LOG_DIR, exist_ok=True)
+    _LOG_FILE = os.path.join(LOG_DIR, time.strftime("测速日志_%Y%m%d_%H%M%S.jsonl"))
+    _JSONL_HANDLER = JsonlFileHandler(_LOG_FILE)
+    logger.addHandler(_JSONL_HANDLER)
     return _LOG_FILE
+
+
+class JsonlFileHandler(logging.Handler):
+    """JSONL 文件日志：每行一个 JSON 对象，逐条 flush（强杀/关窗口也不丢已写内容）"""
+
+    def __init__(self, path: str, level=logging.DEBUG):
+        super().__init__(level)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        self.path = path
+        self._fh = open(path, "a", encoding="utf-8")
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            entry = {
+                "ts": datetime.now().isoformat(timespec="milliseconds"),
+                "level": record.levelname,
+                "event": getattr(record, "event", "") or "",
+                "msg": record.getMessage(),
+            }
+            data = getattr(record, "data", None)
+            if data is not None:
+                entry["data"] = data
+            if record.exc_info:
+                entry["exc"] = "".join(traceback.format_exception(*record.exc_info)).strip()
+            self._fh.write(json.dumps(entry, ensure_ascii=False, default=str) + "\n")
+            self._fh.flush()
+        except Exception:
+            pass
+
+    def close(self) -> None:
+        try:
+            self._fh.close()
+        except Exception:
+            pass
+        super().close()
+
+
+def _ev(event: str, data=None) -> dict:
+    """构造 logger extra：结构化事件名 + 数据（JSONL 用，控制台忽略）"""
+    return {"event": event, "data": data}
+
+
+def _pkg_version(name: str) -> str:
+    """读取已安装包版本（失败返回 ?）"""
+    try:
+        import importlib.metadata as _im
+        return _im.version(name)
+    except Exception:
+        return "?"
+
+
+def _install_excepthook() -> None:
+    """全局未捕获异常兜底：完整 traceback 写入 JSONL（乱操作也不丢现场）"""
+    def _hook(tp, val, tb):
+        text = "".join(traceback.format_exception(tp, val, tb)).strip()
+        try:
+            logger.critical("未捕获异常: %s", text,
+                            extra=_ev("uncaught_exception", {"traceback": text}))
+        except Exception:
+            pass
+        sys.__excepthook__(tp, val, tb)
+    sys.excepthook = _hook
 
 
 def _mask_url(url: str) -> str:
@@ -140,7 +218,7 @@ class _ConsoleFormatter(logging.Formatter):
 #  常量
 # ═══════════════════════════════════════════════════════════════
 
-VERSION = "v4.7"
+VERSION = "v4.8"
 MIHOMO_REPO = "MetaCubeX/mihomo"
 
 # 项目根目录：脚本在子目录(core/src)中时取上级，否则取脚本所在目录
@@ -149,6 +227,7 @@ _BASE_DIR = os.path.dirname(_SCRIPT_DIR) if os.path.basename(_SCRIPT_DIR) in ("c
 
 MIHOMO_DIR = os.path.join(_BASE_DIR, "bin")
 OUTPUT_DIR = os.path.join(_BASE_DIR, "output")
+LOG_DIR = os.path.join(_BASE_DIR, "log")  # v4.8 起日志独立目录（JSONL）
 SUBSCRIBE_FILE = os.path.join(_BASE_DIR, "代理.txt")
 
 # TCP Ping 并发数
@@ -246,7 +325,10 @@ def resolve_youtube_download_url(timeout: int = 15, proxy: str = None) -> str:
                         _YOUTUBE_DL_URL = f["url"]
                         return _YOUTUBE_DL_URL
         except Exception as e:
-            logger.debug("yt-dlp 解析失败 videoId=%s: %s", vid, e)
+            logger.debug(
+                "yt-dlp 解析失败 videoId=%s: %s", vid, e,
+                extra=_ev("yt_source_attempt",
+                          {"video_id": vid, "proxy": bool(proxy), "error": str(e)[:300]}))
             continue
     return ""
 
@@ -851,7 +933,10 @@ def _try_fetch(url: str, ua: str) -> str:
             resp = scraper.get(url, timeout=30)
         else:
             raise ImportError("cloudscraper not installed")
-    except Exception:
+    except Exception as e:
+        logger.debug(
+            "cloudscraper 失败，回退 requests: %s", e,
+            extra=_ev("fetch_fallback", {"url": _mask_url(url), "error": str(e)[:200]}))
         try:
             resp = _requests.get(url, headers={"User-Agent": ua}, timeout=30)
         except Exception as e:
@@ -1097,6 +1182,9 @@ async def run_tcp_ping(nodes: list[ProxyNode], concurrency: int = TCP_PING_CONCU
             label = "超时"
         pbar.set_postfix_str(f"{_flag_to_text(node.name)} {label}", refresh=False)
         pbar.update(1)
+        logger.debug(
+            "TCP %s %s", node.name, label,
+            extra=_ev("tcp_ping", {"node": node.name, "type": node.type, "result": label}))
     pbar.close()
     return results
 
@@ -1147,6 +1235,9 @@ async def run_tcp_probe_pool(binary_path: str, candidates: list[ProxyNode]) -> d
             except Exception:
                 ok = False
             results[node.name] = ok
+            logger.debug(
+                "隧道探测 %s %s", node.name, "可达" if ok else "不可达",
+                extra=_ev("tcp_probe", {"node": node.name, "reachable": ok}))
             pbar.set_postfix_str(
                 f"{_flag_to_text(node.name)} {'可达' if ok else '不可达'}", refresh=False)
             queue.task_done()
@@ -1687,13 +1778,23 @@ async def test_node_speed(mihomo, node: ProxyNode) -> tuple:
                             # 慢节点提前终止
                             if elapsed >= SLOW_ABORT_SECONDS and downloaded < SLOW_ABORT_BYTES:
                                 aborted_slow = True
+                                logger.debug(
+                                    "慢节点提前终止: %s", node.name,
+                                    extra=_ev("speed_abort_slow",
+                                              {"node": node.name, "downloaded_bytes": downloaded}))
                                 finished.set()
                                 return
                 except Exception as e:
-                    logger.debug("test_node_speed conn %d failed for %s: %s", i, node.name, e)
+                    logger.debug("test_node_speed conn %d failed for %s: %s", i, node.name, e,
+                                 extra=_ev("speed_conn_error",
+                                           {"node": node.name, "conn": i, "error": str(e)[:200]}))
                 finally:
-                    logger.debug("测速 conn%d 源=%s 状态=%s 下载=%d 字节",
-                                 i, urlparse(url).netloc, status, got)
+                    host = urlparse(url).netloc
+                    logger.debug(
+                        "测速 conn%d 源=%s 状态=%s 下载=%d 字节", i, host, status, got,
+                        extra=_ev("speed_conn", {
+                            "node": node.name, "conn": i, "source": host,
+                            "status": status, "bytes": got}))
 
             tasks = [asyncio.ensure_future(download_one(i)) for i in range(DOWNLOAD_CONNS)]
             all_done = asyncio.gather(*tasks, return_exceptions=True)
@@ -1770,9 +1871,13 @@ async def run_speed_test(mihomo: MihomoEngine, nodes: list[ProxyNode],
             pbar.set_postfix_str(f"{display} 测速中...")
             ok = await mihomo.switch_proxy(node.name)
             if not ok:
+                logger.warning("切换节点失败: %s", node.name,
+                               extra=_ev("switch_node", {"node": node.name, "ok": False}))
                 pbar.set_postfix_str(f"{display} 切换失败", refresh=False)
                 pbar.update(1)
                 continue
+            logger.debug("切换节点: %s", node.name,
+                         extra=_ev("switch_node", {"node": node.name, "ok": True}))
             await asyncio.sleep(0.2)
             http_latency, speed, max_speed, per_sec, err_note = await test_node_speed(mihomo, node)
             if node.name in results:
@@ -1789,6 +1894,13 @@ async def run_speed_test(mihomo: MihomoEngine, nodes: list[ProxyNode],
                 f"{speed:.1f}MB/s" if speed else "--",
                 f"{max_speed:.1f}MB/s" if max_speed else "--",
                 err_note or "",
+                extra=_ev("speed_done", {
+                    "node": node.name,
+                    "http_latency_ms": http_latency,
+                    "avg_mbs": speed,
+                    "max_mbs": max_speed,
+                    "error": err_note or None,
+                }),
             )
             pbar.set_postfix_str(
                 f"{display} "
@@ -2257,6 +2369,35 @@ async def check_one_node_streaming(session: aiohttp.ClientSession, proxy: str,
     return result_dict
 
 
+def _log_streaming_details(node_name: str, streaming: dict) -> None:
+    """JSONL 记录单节点流媒体汇总 + 每平台明细"""
+    unlocked = sum(1 for v in streaming.values()
+                   if "解锁" in v or "可用" in v or "成功" in v)
+    logger.debug(
+        "解锁 %s: %d/%d 平台", node_name, unlocked, len(streaming),
+        extra=_ev("streaming_done", {"node": node_name, "unlocked": unlocked,
+                                     "total": len(streaming)}))
+    for sid, val in streaming.items():
+        logger.debug(
+            "流媒体 %s %s=%s", node_name, sid, val,
+            extra=_ev("streaming_result", {"node": node_name, "service": sid, "result": val}))
+
+
+def _log_ip_details(node_name: str, ip_info: dict) -> None:
+    """JSONL 记录单节点 IP 检测结果"""
+    logger.debug(
+        "IP %s: %s 风险=%s", node_name, ip_info.get("ip", "?"),
+        ip_info.get("risk_score", "?"),
+        extra=_ev("ip_done", {
+            "node": node_name, "ip": ip_info.get("ip"),
+            "risk_score": ip_info.get("risk_score"),
+            "share_level": ip_info.get("share_level"),
+            "asn": ip_info.get("asn"),
+            "org": ip_info.get("org"),
+            "source": ip_info.get("source"),
+        }))
+
+
 async def run_streaming_test(mihomo: MihomoEngine, nodes: list[ProxyNode],
                               results: dict[str, TestResult],
                               services: list = None) -> None:
@@ -2284,7 +2425,7 @@ async def run_streaming_test(mihomo: MihomoEngine, nodes: list[ProxyNode],
                 # 统计解锁数
                 unlocked = sum(1 for v in streaming.values()
                               if "解锁" in v or "可用" in v or "成功" in v)
-                logger.debug("解锁 %s: %d/%d 平台", node.name, unlocked, len(streaming))
+                _log_streaming_details(node.name, streaming)
                 pbar.set_postfix_str(f"{display} {unlocked}/{len(streaming)}", refresh=False)
                 pbar.update(1)
     finally:
@@ -2430,19 +2571,26 @@ async def check_ip_quality(session: aiohttp.ClientSession, proxy: str) -> dict:
             ) as resp:
                 if resp.status != 200:
                     last_err = f"HTTP {resp.status}"
-                    logger.debug("IP 源 %s 返回 %s，换下一个源", url, last_err)
+                    logger.debug("IP 源 %s 返回 %s，换下一个源", url, last_err,
+                                 extra=_ev("ip_source_attempt",
+                                           {"source": url, "ok": False, "error": last_err}))
                     continue
                 data = await resp.json()
             info = mapper(data)
             if not info.get("ip"):
                 last_err = "响应无 IP 字段"
-                logger.debug("IP 源 %s 响应无 IP 字段，换下一个源", url)
+                logger.debug("IP 源 %s 响应无 IP 字段，换下一个源", url,
+                             extra=_ev("ip_source_attempt",
+                                       {"source": url, "ok": False, "error": last_err}))
                 continue
-            logger.debug("IP 源 %s 成功", url)
+            logger.debug("IP 源 %s 成功", url,
+                         extra=_ev("ip_source_attempt", {"source": url, "ok": True}))
             return info
         except Exception as e:
             last_err = str(e)
-            logger.debug("IP 源 %s 失败: %s", url, e)
+            logger.debug("IP 源 %s 失败: %s", url, e,
+                         extra=_ev("ip_source_attempt",
+                                   {"source": url, "ok": False, "error": str(e)[:200]}))
     return {"error": last_err or "所有IP源均失败"}
 
 
@@ -2479,7 +2627,7 @@ async def run_ip_quality_test(mihomo: MihomoEngine, nodes: list[ProxyNode],
                 risk = ip_info.get("risk_score")
                 risk = "?" if risk is None else risk
                 ip_addr = ip_info.get("ip", "?")
-                logger.debug("IP %s: %s 风险=%s%%", node.name, ip_addr, risk)
+                _log_ip_details(node.name, ip_info)
                 pbar.set_postfix_str(f"{display} {ip_addr} 风险:{risk}%", refresh=False)
                 pbar.update(1)
     finally:
@@ -2900,7 +3048,7 @@ async def _run_node_pipeline(pool: MihomoWorkerPool, node_tasks: list,
                             results_dict[node.name].streaming = streaming
                         unlocked = sum(1 for v in streaming.values()
                                        if "解锁" in v or "可用" in v or "成功" in v)
-                        logger.debug("解锁 %s: %d/%d 平台", node.name, unlocked, len(streaming))
+                        _log_streaming_details(node.name, streaming)
                         pbar.set_postfix_str(f"{_flag_to_text(node.name)} 解锁{unlocked}/{len(streaming)}")
 
                 # 2) IP 质量（多源回退 + 全局串行节流）
@@ -2923,8 +3071,7 @@ async def _run_node_pipeline(pool: MihomoWorkerPool, node_tasks: list,
                                 seen_ips.add(curr_ip)
                         risk = ip_info.get("risk_score")
                         risk = "?" if risk is None else risk
-                        logger.debug("IP %s: %s 风险=%s%%", node.name,
-                                     ip_info.get("ip", "?"), risk)
+                        _log_ip_details(node.name, ip_info)
                         pbar.set_postfix_str(f"{_flag_to_text(node.name)} 风险:{risk}%")
             except Exception as e:
                 if node.name in results_dict:
@@ -2946,6 +3093,30 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
     global SPEED_WINDOW_SECONDS
     t_start = time.monotonic()
     output_mode = mode  # 保留原始模式名（streaming_ai/streaming_all），供文件名/报告头/JSON
+    phase = "初始化"  # 当前阶段（中断事件记录用）
+    new_run_log()
+    logger.info(
+        "运行开始: 模式=%s workers=%s fast=%s",
+        output_mode, workers, fast,
+        extra=_ev("run_start", {
+            "version": VERSION,
+            "python": sys.version.split()[0],
+            "platform": sys.platform,
+            "argv": list(sys.argv),
+            "mode": output_mode,
+            "workers": workers,
+            "fast": fast,
+            "deps": {
+                "aiohttp": _pkg_version("aiohttp"),
+                "yaml": _pkg_version("PyYAML"),
+                "PIL": _pkg_version("Pillow"),
+                "tqdm": _pkg_version("tqdm"),
+                "requests": _pkg_version("requests"),
+                "cloudscraper": HAS_CLOUDSCRAPER,
+                "yt_dlp": HAS_YTDLP,
+            },
+        }),
+    )
 
     # Step 1: 解析订阅
     if isinstance(subscribe_url, (list, tuple)):
@@ -2970,7 +3141,13 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
         logger.error("  - 请检查 代理.txt 中的订阅链接是否正确")
         return ""
 
-    logger.info(f"[成功] 解析到 {len(nodes)} 个节点")
+    type_counts = {}
+    for n in nodes:
+        type_counts[n.type] = type_counts.get(n.type, 0) + 1
+    logger.info(
+        "[成功] 解析到 %d 个节点", len(nodes),
+        extra=_ev("parse_done", {"total": len(nodes), "type_counts": type_counts}),
+    )
     for n in nodes[:5]:
         logger.info(f"   - {n.name} ({n.type}://{n.server}:{n.port})")
     if len(nodes) > 5:
@@ -3016,6 +3193,7 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
     used_pool = False
     try:
         if mode != "streaming":
+            phase = "TCP检测"
             logger.info("=" * 50)
             logger.info(f"[{step_idx}/{len(steps)}] TCP Ping 延迟测试")
             logger.info("=" * 50)
@@ -3067,20 +3245,30 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
 
         # 阶段2: HTTP 测速（恒串行：单节点单时刻；节点内部 DOWNLOAD_CONNS 路并发连接）
         if mode != "streaming" and active_speed:
+            phase = "HTTP测速"
             yt_url = resolve_youtube_download_url(timeout=10)
+            yt_method = "direct"
             mihomo.generate_config(active_all)
             await mihomo.start()
-            logger.info("mihomo 启动成功")
+            logger.info("mihomo 启动成功",
+                        extra=_ev("mihomo_start", {"api_port": mihomo.api_port,
+                                                   "mixed_port": mihomo.mixed_port}))
             if not yt_url and active_speed:
                 # 本机直连失败 → 经首个可达节点隧道再试（节点能访问油管是使用该源的前提）
                 ok = await mihomo.switch_proxy(active_speed[0].name)
                 if ok:
                     await asyncio.sleep(0.3)
                     yt_url = resolve_youtube_download_url(proxy=mihomo.get_proxy_url())
+                    yt_method = "node_proxy"
             if yt_url:
-                logger.info("油管测速源就绪: %s", urlparse(yt_url).netloc)
+                logger.info(
+                    "油管测速源就绪: %s", urlparse(yt_url).netloc,
+                    extra=_ev("yt_source_resolve",
+                              {"method": yt_method, "host": urlparse(yt_url).netloc}))
             else:
-                logger.warning("油管测速源不可用，使用 %d 个基础源", len(SPEED_TEST_URLS))
+                logger.warning(
+                    "油管测速源不可用，使用 %d 个基础源", len(SPEED_TEST_URLS),
+                    extra=_ev("yt_source_resolve", {"method": yt_method, "host": None}))
             logger.info("=" * 50)
             logger.info(f"[{step_idx}/{len(steps)}] HTTP 测速（串行，{DOWNLOAD_CONNS} 连接/节点）")
             logger.info("=" * 50)
@@ -3089,6 +3277,7 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
 
         # 阶段3(补测): 测速完成后，对仍超时的节点重新测 TCP（直连 + 隧道），恢复的补测速
         if mode != "streaming":
+            phase = "补测超时节点"
             timeout_nodes = [n for n in nodes
                              if n.name in results_dict
                              and results_dict[n.name].tcp_ping is None
@@ -3119,15 +3308,21 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
                 to_test = [n for n in timeout_nodes
                            if n.name in revived and n.name not in {x.name for x in active_speed}]
                 if to_test:
-                    logger.info(f"补测恢复 {len(to_test)} 个节点，补跑测速...")
+                    logger.info(
+                        f"补测恢复 {len(to_test)} 个节点，补跑测速...",
+                        extra=_ev("retest_speed", {"nodes": [n.name for n in to_test]}))
                     await run_speed_test(mihomo, to_test, results_dict)
                 still_dead_n = sum(
                     1 for n in timeout_nodes
                     if results_dict[n.name].tcp_ping is None
                     and results_dict[n.name].tcp_probe is not True)
-                logger.info(f"补测完成: 恢复 {len(revived)} 个，仍超时 {still_dead_n} 个")
+                logger.info(
+                    f"补测完成: 恢复 {len(revived)} 个，仍超时 {still_dead_n} 个",
+                    extra=_ev("retest_done", {"revived": sorted(revived),
+                                              "still_dead": still_dead_n}))
 
         # 阶段4: 流媒体 + IP（默认 4 路并行，--workers 可调）
+        phase = "流媒体/IP检测"
         need_stream = mode != "basic"
         need_ip = (mode == "full") and not fast
         if need_stream or need_ip:
@@ -3136,7 +3331,9 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
                 pool = MihomoWorkerPool(mihomo.binary_path, workers)
                 if await pool.start():
                     used_pool = True
-                    logger.info(f"mihomo 并行池就绪: {len(pool.workers)} workers（流媒体/IP）")
+                    logger.info(
+                        f"mihomo 并行池就绪: {len(pool.workers)} workers（流媒体/IP）",
+                        extra=_ev("worker_pool_start", {"workers": len(pool.workers)}))
                     logger.info("=" * 50)
                     logger.info(f"[{step_idx}/{len(steps)}] 流媒体/IP 检测（并行 {len(pool.workers)} 路）")
                     logger.info("=" * 50)
@@ -3159,19 +3356,22 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
             step_idx += 1
 
     except KeyboardInterrupt:
-        logger.warning("用户中断测试，正在生成当前结果...")
+        logger.warning("用户中断测试，正在生成当前结果...（中断阶段: %s）", phase,
+                       extra=_ev("user_interrupt", {"phase": phase}))
     except asyncio.CancelledError:
         # asyncio.run 下 Ctrl+C 以 CancelledError 抛出，吞掉后继续生成部分结果
-        logger.warning("用户中断测试，正在生成当前结果...")
+        logger.warning("用户中断测试，正在生成当前结果...（中断阶段: %s）", phase,
+                       extra=_ev("user_interrupt", {"phase": phase}))
     except Exception:
-        logger.exception("mihomo 测试异常")
+        logger.exception("mihomo 测试异常", extra=_ev("run_exception", {"phase": phase}))
     finally:
         if pool:
             await pool.stop()
         await mihomo.stop()
-        logger.info("mihomo 已停止")
+        logger.info("mihomo 已停止", extra=_ev("mihomo_stop", {}))
 
     # Step 7: 生成报告
+    phase = "生成报告"
     total_time = time.monotonic() - t_start
     logger.info("=" * 50)
     logger.info("生成报告...")
@@ -3181,7 +3381,15 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
         display_mode=output_mode,
     )
     logger.info("=" * 50)
-    logger.info(f"测试完成! 耗时 {total_time:.0f} 秒 节点 {len(nodes)} 总")
+    logger.info(
+        "测试完成! 耗时 %.0f 秒 节点 %d 总", total_time, len(nodes),
+        extra=_ev("run_end", {
+            "total_seconds": round(total_time, 1),
+            "nodes": len(nodes),
+            "mode": output_mode,
+            "report": img_path,
+        }),
+    )
     if mode != "streaming":
         direct_ok = sum(1 for r in results_dict.values() if r.tcp_ping is not None)
         probe_only = sum(1 for r in results_dict.values() if r.tcp_ping is None and r.tcp_probe)
@@ -3203,9 +3411,9 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
         logger.exception("JSON 导出失败")
         json_path = ""
 
-    logger.info(f"报告: {img_path}")
+    logger.info(f"报告: {img_path}", extra=_ev("report_done", {"path": img_path}))
     if json_path:
-        logger.info(f"数据: {json_path}")
+        logger.info(f"数据: {json_path}", extra=_ev("json_export_done", {"path": json_path}))
     if _LOG_FILE:
         logger.info(f"日志: {_LOG_FILE}")
     logger.info("=" * 50)
@@ -3341,11 +3549,16 @@ async def async_main():
     while True:
         show_menu()
         choice = input("\n请选择 [1-7]: ").strip()
+        logger.debug("菜单选择: %s", choice, extra=_ev("menu_choice", {"choice": choice}))
 
         if choice in ("1", "2", "3", "4"):
             urls = read_subscribe_urls()
             if not urls:
                 manual = input("未找到 代理.txt，请输入订阅URL: ").strip()
+                logger.debug(
+                    "手动输入订阅URL",
+                    extra=_ev("manual_subscribe_input",
+                              {"url": _mask_url(manual) if manual else ""}))
                 if manual:
                     urls = [manual]
                 else:
@@ -3396,14 +3609,17 @@ async def async_main():
                     os.makedirs(MIHOMO_DIR, exist_ok=True)
                     dst = os.path.join(MIHOMO_DIR, os.path.basename(binary))
                     shutil.move(binary, dst)
-                    logger.info(f"mihomo 更新完成: {dst}")
+                    logger.info(f"mihomo 更新完成: {dst}",
+                                extra=_ev("mihomo_update", {"ok": True, "path": dst}))
                     print(f"[OK] 更新完成: {dst}")
                 else:
-                    logger.error("mihomo 更新失败（下载或解压失败）")
+                    logger.error("mihomo 更新失败（下载或解压失败）",
+                                 extra=_ev("mihomo_update", {"ok": False, "error": "download/unzip"}))
                     print("[错误] 更新失败")
                 shutil.rmtree(tmp_dir, ignore_errors=True)
             except Exception as e:
-                logger.error(f"mihomo 更新失败: {e}")
+                logger.error(f"mihomo 更新失败: {e}",
+                             extra=_ev("mihomo_update", {"ok": False, "error": str(e)[:200]}))
                 print(f"[错误] 更新失败: {e}")
             input("\n按 Enter 返回菜单...")
 
@@ -3413,6 +3629,8 @@ async def async_main():
 
         else:
             print("无效选择")
+            logger.warning("无效菜单选择: %s", choice,
+                           extra=_ev("invalid_input", {"choice": choice}))
             input("\n按 Enter 继续...")
 
 
@@ -3425,6 +3643,8 @@ def main():
         logger.info("再见!")
     except asyncio.CancelledError:
         logger.info("再见!")
+    except Exception:
+        logger.exception("程序异常退出", extra=_ev("run_exception", {"phase": "main"}))
 
 
 if __name__ == "__main__":

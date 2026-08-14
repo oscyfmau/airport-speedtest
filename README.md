@@ -9,7 +9,7 @@
 
 Airport subscription speed-test tool: pull all nodes from a subscription URL, test TCP latency, HTTP download speed, streaming unlock and IP risk per node, then generate a visual PNG report + JSON data.
 
-版本：v4.7 ｜ 仓库：https://github.com/oscyfmau/airport-speedtest
+版本：v4.8 ｜ 仓库：https://github.com/oscyfmau/airport-speedtest
 
 ## 预览 Preview
 
@@ -25,7 +25,7 @@ Airport subscription speed-test tool: pull all nodes from a subscription URL, te
 3. **运行**：
    - 安装 Python 3.8+（[python.org](https://www.python.org/downloads/)，安装时勾选 "Add python.exe to PATH"）
    - 在解压目录执行 `pip install -r core/requirements.txt`
-   - 双击 `run.bat` → 菜单选 `1` 简单测速 → 等待几分钟 → 自动打开 PNG 报告（报告文件在 `output/` 文件夹）
+   - 双击 `run.bat` → 菜单选 `1` 简单测速 → 等待几分钟 → 自动打开 PNG 报告（报告文件在 `output/` 文件夹，日志在 `log/` 文件夹）
 
 mihomo 内核无需手动下载，首次运行时自动下载到 `bin/`（约 47MB）。
 
@@ -38,7 +38,7 @@ mihomo 内核无需手动下载，首次运行时自动下载到 `bin/`（约 47
 - 流媒体解锁检测：34 个平台，11 个平台有专用检测器（含 B站港澳台、TikTok、Steam 等）
 - IP 风控：ipapi.is 主源 + ipwho.is / api.ip.sb 自动回退
 - 报告前自动补测超时节点，恢复的节点补跑测速
-- 全程日志：控制台 INFO + 文件 DEBUG（output/测速日志_*.log），订阅 token 自动遮蔽
+- 全程 JSON 结构化日志：控制台 INFO（文本）+ 文件 JSONL（`log/测速日志_*.jsonl`，每节点/每连接/每流媒体平台/IP 每次尝试都有记录，订阅 token 自动遮蔽）
 - 控制台进度条每秒刷新一次；节点国旗在控制台显示为国家代码（如 [JP]），PNG 报告仍显示国旗
 - 输出：PNG 可视化报告 + JSON 结构化数据
 
@@ -220,6 +220,9 @@ cd 机场测速 && python core/speed_test.py -h            # 帮助
 **报告没有自动打开？**
 报告文件都在 `output/` 文件夹里，双击最新的 `测速结果_*.png` 即可；也可以在菜单里选 `5` 查看上次结果。
 
+**运行报错了怎么办？**
+把 `log/` 文件夹里最新的 `测速日志_*.jsonl` 文件发来即可——里面记录了运行环境（Python 版本/依赖版本）、每一步操作、每个节点的完整明细和报错堆栈，不用截图。
+
 ## 已知限制
 
 - IP 质量检测依赖免费 API（ipapi.is 主源，ipwho.is / api.ip.sb 回退），无风控字段的源不编造风险值（显示 `--`）
@@ -251,7 +254,8 @@ cd 机场测速 && python core/speed_test.py -h            # 帮助
 │   ├── image.py         # 图片生成重导出
 │   └── requirements.txt # Python 依赖
 ├── bin/                 # mihomo 内核（自动下载，不入库）
-└── output/              # PNG 报告 + JSON 数据 + 测速日志（不入库）
+├── output/              # PNG 报告 + JSON 数据（不入库）
+└── log/                 # JSONL 运行日志（不入库，报错时发这个目录的文件）
 ```
 
 ## 许可证
