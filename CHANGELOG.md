@@ -30,6 +30,9 @@
 - `_try_fetch`：cloudscraper 回退 requests 时记录 `fetch_fallback` 事件
 
 ### 修复
+- run.bat 被重写为 LF 行尾（cmd.exe 无法正确解析多行 if 块与 goto 标签，双击直接报错）→ 恢复 CRLF 行尾
+- run.bat 括号块内嵌套 `%ERRORLEVEL%` 比较（批处理为解析期展开、取值过期）导致 `py -3` 回退分支永不生效 → 改为 `if errorlevel 1` 动态判断 + goto 标签结构
+- run.bat 新增 python 真实可用性校验（`python -c "import sys"`），防止微软商店 python.exe 别名导致假阳性
 - 标准测试（菜单2）流媒体路径核查确认无功能 bug（菜单2 → normal → full + 9 常用流媒体 + IP；`check_one_node_streaming(services=None)` 兜底 FULL 34 平台）；此前"没测到流媒体"系测试中途 Ctrl+C 中断导致（中断前的 JSON 流媒体为空），现由 `user_interrupt` 事件明确记录
 
 ### 移除
