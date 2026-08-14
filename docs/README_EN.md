@@ -11,6 +11,8 @@ Pull all nodes from an airport subscription, test latency, speed, streaming unlo
 
 Version: v4.9.0 | Repository: [github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) | [Changelog](CHANGELOG.md)
 
+> This project was written by AI and developed for personal needs — take it as-is.
+
 ## Preview
 
 ![Sample speed test report](preview_report.png)

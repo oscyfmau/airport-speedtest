@@ -11,6 +11,8 @@
 
 版本：v4.9.0 ｜ 仓库：[github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) ｜ [更新记录](CHANGELOG.md)
 
+> 本项目由 AI 编写完成，因个人测速需求而开发，按需取用。
+
 ## 预览
 
 ![示例测速报告](preview_report.png)
