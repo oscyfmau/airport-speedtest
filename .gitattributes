@@ -1,0 +1,2 @@
+# 批处理文件必须保持 CRLF 行尾原样入库（GitHub zip 直接分发，LF 会破坏 cmd 解析）
+*.bat -text
