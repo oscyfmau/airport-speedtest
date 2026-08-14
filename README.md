@@ -2,13 +2,32 @@
 
 # 机场测速工具
 
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/oscyfmau/airport-speedtest)](https://github.com/oscyfmau/airport-speedtest/releases)
+
 把机场订阅 URL 里的所有节点拉下来，逐节点测试 TCP 延迟、HTTP 下载速度、流媒体解锁和 IP 风控，最后生成可视化 PNG 报告 + JSON 数据。
 
 Airport subscription speed-test tool: pull all nodes from a subscription URL, test TCP latency, HTTP download speed, streaming unlock and IP risk per node, then generate a visual PNG report + JSON data.
 
-版本：v4.7
+版本：v4.7 ｜ 仓库：https://github.com/oscyfmau/airport-speedtest
 
-仓库：https://github.com/oscyfmau/airport-speedtest
+## 预览 Preview
+
+![示例测速报告](assets/preview_report.png)
+
+（示例报告，数据为演示用途）
+
+## 快速上手（三步，不会命令行也能用）
+
+1. **下载**：打开 [Releases 页面](https://github.com/oscyfmau/airport-speedtest/releases)，下载最新版的 `Source code (zip)` 并解压（会用 git 也可以 `git clone`）
+2. **填订阅**：把解压目录里的 `代理.txt.example` 复制一份，改名为 `代理.txt`，用记事本打开，粘贴你的订阅链接后保存
+   - 什么是订阅链接？机场服务商提供的网址（一般以 `https://` 开头，内含全部节点信息），在机场官网或客户端 App 的「复制订阅」处获得
+3. **运行**：
+   - 安装 Python 3.8+（[python.org](https://www.python.org/downloads/)，安装时勾选 "Add python.exe to PATH"）
+   - 在解压目录执行 `pip install -r core/requirements.txt`
+   - 双击 `run.bat` → 菜单选 `1` 简单测速 → 等待几分钟 → 自动打开 PNG 报告（报告文件在 `output/` 文件夹）
+
+mihomo 内核无需手动下载，首次运行时自动下载到 `bin/`（约 47MB）。
 
 ## 特性
 
@@ -33,6 +52,11 @@ Airport subscription speed-test tool: pull all nodes from a subscription URL, te
 - mihomo 内核无需手动下载，首次运行时自动下载到 `bin/`（约 47MB）
 
 ### 获取代码
+
+两种方式任选：
+
+- 不用 git：到 [Releases 页面](https://github.com/oscyfmau/airport-speedtest/releases) 下载最新版 `Source code (zip)` 并解压
+- 用 git：
 
 ```bash
 git clone https://github.com/oscyfmau/airport-speedtest.git
@@ -187,6 +211,15 @@ cd 机场测速 && python core/speed_test.py -h            # 帮助
 **风险分高意味着什么？**
 出口 IP 带有数据中心/代理/VPN 特征，访问风控严格的平台（如 Netflix 非自制剧、部分银行）更容易被要求验证或拒绝。换家宽/原生 IP 节点可改善。
 
+**双击 run.bat 一闪而过？**
+在 cmd 里运行 `python core/speed_test.py` 查看报错。常见原因：没装 Python、安装时没勾选 "Add to PATH"、依赖没装全（重新执行 `pip install -r core/requirements.txt`）。
+
+**怎么把结果发给别人看？**
+直接发 `output/` 文件夹里的 PNG 报告图片即可（可视化报告）。JSON 是结构化数据（进阶用），日志是排查问题时用的，一般不用发给别人。
+
+**报告没有自动打开？**
+报告文件都在 `output/` 文件夹里，双击最新的 `测速结果_*.png` 即可；也可以在菜单里选 `5` 查看上次结果。
+
 ## 已知限制
 
 - IP 质量检测依赖免费 API（ipapi.is 主源，ipwho.is / api.ip.sb 回退），无风控字段的源不编造风险值（显示 `--`）
@@ -203,6 +236,8 @@ cd 机场测速 && python core/speed_test.py -h            # 帮助
 ├── 代理.txt             # 订阅 URL，每行一个（敏感，不入库）
 ├── README.md            # 中文使用说明（本文件）
 ├── README_EN.md         # English README
+├── assets/
+│   └── preview_report.png # 示例报告图（演示数据）
 ├── CHANGELOG.md         # 版本变更记录
 ├── LICENSE              # MIT 协议
 ├── .gitignore           # 排除敏感文件与运行产物

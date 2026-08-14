@@ -2,11 +2,30 @@
 
 # Airport Speed Test Tool
 
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/oscyfmau/airport-speedtest)](https://github.com/oscyfmau/airport-speedtest/releases)
+
 Airport subscription speed-test tool: pull all nodes from a subscription URL, test TCP latency, HTTP download speed, streaming unlock and IP risk per node, then generate a visual PNG report + JSON data.
 
-Version: v4.7
+Version: v4.7 | Repository: https://github.com/oscyfmau/airport-speedtest
 
-Repository: https://github.com/oscyfmau/airport-speedtest
+## Preview
+
+![Sample speed test report](assets/preview_report.png)
+
+(Sample report; data is for demonstration purposes)
+
+## Quick Start (3 Steps, No Command Line Skills Needed)
+
+1. **Download**: open the [Releases page](https://github.com/oscyfmau/airport-speedtest/releases), download the latest `Source code (zip)` and unzip it (if you know git you can also `git clone`)
+2. **Fill in the subscription**: in the unzipped folder, copy `代理.txt.example`, rename it to `代理.txt`, open it with Notepad, paste your subscription link and save
+   - What is a subscription link? A URL provided by your airport service provider (usually starts with `https://` and contains all node info); get it from the "Copy subscription" option on the airport website or in the client app
+3. **Run**:
+   - Install Python 3.8+ ([python.org](https://www.python.org/downloads/), check "Add python.exe to PATH" during installation)
+   - In the unzipped folder run `pip install -r core/requirements.txt`
+   - Double-click `run.bat` → select `1` Simple speed test in the menu → wait a few minutes → the PNG report opens automatically (report files are in the `output/` folder)
+
+The mihomo core downloads automatically on first run to `bin/` (about 47MB) — no manual download needed.
 
 ## Features
 
@@ -31,6 +50,11 @@ Repository: https://github.com/oscyfmau/airport-speedtest
 - The mihomo core downloads automatically on first run to `bin/` (about 47MB), no manual download needed
 
 ### Getting the Code
+
+Either of the two ways:
+
+- No git: go to the [Releases page](https://github.com/oscyfmau/airport-speedtest/releases), download the latest `Source code (zip)` and unzip it
+- With git:
 
 ```bash
 git clone https://github.com/oscyfmau/airport-speedtest.git
@@ -185,6 +209,15 @@ Results are affected by real-time bandwidth on the airport server side (especial
 **What does a high risk score mean?**
 The egress IP carries datacenter/proxy/VPN characteristics, so platforms with strict risk control (e.g. Netflix non-originals, some banks) are more likely to demand verification or deny access. Switching to residential/native IP nodes can help.
 
+**Double-clicking run.bat closes immediately?**
+Run `python core/speed_test.py` in cmd to see the error message. Common causes: Python not installed, "Add to PATH" not checked during installation, dependencies not fully installed (re-run `pip install -r core/requirements.txt`).
+
+**How do I share the results with others?**
+Just send the PNG report image in the `output/` folder (the visual report). JSON is structured data (for advanced use), and logs are for troubleshooting — normally you don't need to send them.
+
+**The report didn't open automatically?**
+All report files are in the `output/` folder: double-click the latest `测速结果_*.png`, or select `5` in the menu to view the last result.
+
 ## Known Limitations
 
 - IP quality detection depends on free APIs (ipapi.is primary, ipwho.is / api.ip.sb fallback); sources without risk-control fields do not fabricate risk values (shown as `--`)
@@ -201,6 +234,8 @@ The egress IP carries datacenter/proxy/VPN characteristics, so platforms with st
 ├── 代理.txt             # subscription URLs, one per line (sensitive, not committed)
 ├── README.md            # Chinese README
 ├── README_EN.md         # English README (this file)
+├── assets/
+│   └── preview_report.png # sample report image (demo data)
 ├── CHANGELOG.md         # version change log
 ├── LICENSE              # MIT license
 ├── .gitignore           # excludes sensitive files and runtime artifacts
