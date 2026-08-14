@@ -1,3 +1,5 @@
+> 语言 / Language: [中文](README.md) | [English](README_EN.md)
+
 # 机场测速工具
 
 把机场订阅 URL 里的所有节点拉下来，逐节点测试 TCP 延迟、HTTP 下载速度、流媒体解锁和 IP 风控，最后生成可视化 PNG 报告 + JSON 数据。
@@ -199,7 +201,8 @@ cd 机场测速 && python core/speed_test.py -h            # 帮助
 ├── run.bat              # 启动脚本（唯一入口）
 ├── 代理.txt.example     # 订阅 URL 模板（复制为 代理.txt 使用）
 ├── 代理.txt             # 订阅 URL，每行一个（敏感，不入库）
-├── README.md            # 本文件（使用说明与术语解释）
+├── README.md            # 中文使用说明（本文件）
+├── README_EN.md         # English README
 ├── CHANGELOG.md         # 版本变更记录
 ├── LICENSE              # MIT 协议
 ├── .gitignore           # 排除敏感文件与运行产物
