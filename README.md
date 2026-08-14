@@ -2,6 +2,8 @@
 
 把机场订阅 URL 里的所有节点拉下来，逐节点测试 TCP 延迟、HTTP 下载速度、流媒体解锁和 IP 风控，最后生成可视化 PNG 报告 + JSON 数据。
 
+Airport subscription speed-test tool: pull all nodes from a subscription URL, test TCP latency, HTTP download speed, streaming unlock and IP risk per node, then generate a visual PNG report + JSON data.
+
 版本：v4.7
 
 仓库：https://github.com/oscyfmau/airport-speedtest
