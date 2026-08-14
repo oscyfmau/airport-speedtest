@@ -6,6 +6,6 @@ from .speed_test import (
     parse_hysteria2, parse_hysteria, parse_tuic, parse_anytls,
     parse_wireguard, parse_naive, parse_shadowtls, parse_juicity, parse_ssh,
     parse_socks, parse_http, parse_node_uri, parse_subscription_url,
-    parse_subscription_content, detect_and_decode,
+    parse_subscription_urls, parse_subscription_content, detect_and_decode,
     read_subscribe_urls, PARSERS
 )

@@ -1,19 +1,19 @@
 > 语言 / Language: [中文](README.md) | [English](README_EN.md)
 
-# 机场测速工具
+# 机场测速
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/github/v/release/oscyfmau/airport-speedtest)](https://github.com/oscyfmau/airport-speedtest/releases)
+把机场订阅里的所有节点拉下来，一键测完延迟、速度、流媒体解锁与 IP 质量，自动生成图文报告。不用懂 mihomo 配置，也能知道自己该用哪个节点。
 
-把机场订阅 URL 里的所有节点拉下来，逐节点测试 TCP 延迟、HTTP 下载速度、流媒体解锁和 IP 风控，最后生成可视化 PNG 报告 + JSON 数据。
+[![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/oscyfmau/airport-speedtest?style=flat-square)](https://github.com/oscyfmau/airport-speedtest/releases)
+[![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
+[![Downloads](https://img.shields.io/github/downloads/oscyfmau/airport-speedtest/total?style=flat-square)](https://github.com/oscyfmau/airport-speedtest/releases)
 
-Airport subscription speed-test tool: pull all nodes from a subscription URL, test TCP latency, HTTP download speed, streaming unlock and IP risk per node, then generate a visual PNG report + JSON data.
+版本：v4.9.0 ｜ 仓库：[github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) ｜ [更新记录](CHANGELOG.md)
 
-版本：v4.8 ｜ 仓库：https://github.com/oscyfmau/airport-speedtest
+## 预览
 
-## 预览 Preview
-
-![示例测速报告](assets/preview_report.png)
+![示例测速报告](preview_report.png)
 
 （示例报告，数据为演示用途）
 
@@ -23,31 +23,37 @@ Airport subscription speed-test tool: pull all nodes from a subscription URL, te
 2. **填订阅**：把解压目录里的 `代理.txt.example` 复制一份，改名为 `代理.txt`，用记事本打开，粘贴你的订阅链接后保存
    - 什么是订阅链接？机场服务商提供的网址（一般以 `https://` 开头，内含全部节点信息），在机场官网或客户端 App 的「复制订阅」处获得
 3. **运行**：
-   - 安装 Python 3.8+（[python.org](https://www.python.org/downloads/)，安装时勾选 "Add python.exe to PATH"）
+   - 安装 Python 3.9+（[python.org](https://www.python.org/downloads/)，安装时勾选 "Add python.exe to PATH"）
    - 在解压目录执行 `pip install -r core/requirements.txt`
    - 双击 `run.bat` → 菜单选 `1` 简单测速 → 等待几分钟 → 自动打开 PNG 报告（报告文件在 `output/` 文件夹，日志在 `log/` 文件夹）
 
 mihomo 内核无需手动下载，首次运行时自动下载到 `bin/`（约 47MB）。
 
+> [!IMPORTANT]
+> 订阅链接包含账号 token：`代理.txt` 只保存在本地（已加入 .gitignore），不要发到公开场合。工具自身也会在日志与异常记录里自动遮蔽订阅 token。
+
+> [!NOTE]
+> 测速会消耗节点流量（每节点约 10-30MB）；标准测试还会为每个节点额外做一轮网页模拟（约 3-8 秒）。节点套餐写明「勿跑大流量」的，请用 `--fast` 或谨慎全量测试。
+
 ## 特性
 
-- 支持 20 种协议解析：vmess / vless / trojan / ss / ssr / hysteria2 / hysteria / tuic / anytls / wireguard / naive / shadowtls / juicity / ssh / socks / http 等
-- 支持多个订阅 URL 合并测速（代理.txt 每行一个，-i 文件同样支持多行）
-- TCP 检测双来源：本机直连握手 + 经 mihomo 隧道探测互验，减少误判
-- 测速节点串行、单节点 4 路并发连接 + 4 个下载源聚合（Cloudflare/CacheFly/OVH + 油管 googlevideo 直链，数值稳定可靠）
-- 流媒体解锁检测：34 个平台，11 个平台有专用检测器（含 B站港澳台、TikTok、Steam 等）
-- IP 风控：ipapi.is 主源 + ipwho.is / api.ip.sb 自动回退
-- 报告前自动补测超时节点，恢复的节点补跑测速
-- 全程 JSON 结构化日志：控制台 INFO（文本）+ 文件 JSONL（`log/测速日志_*.jsonl`，每节点/每连接/每流媒体平台/IP 每次尝试都有记录，订阅 token 自动遮蔽）
-- 控制台进度条每秒刷新一次；节点国旗在控制台显示为国家代码（如 [JP]），PNG 报告仍显示国旗
-- 输出：PNG 可视化报告 + JSON 结构化数据
+- 协议解析：支持 vmess / vless / trojan / ss / ssr / hysteria2 / tuic / wireguard / anytls 等 20 种协议，多个订阅 URL 可合并去重
+- TCP 延迟：本机直连握手 + mihomo 隧道双来源互验减少误判，3 次握手统计丢包率（延迟列显示 `312ms(1丢)`）
+- 测速：节点串行互不干扰、单节点 4 路连接 + 3 个下载源聚合（Cloudflare/CacheFly/OVH），8 秒窗口、剥离首秒慢启动
+- 流媒体解锁：34 个平台、11 个专用检测器（Netflix/Disney/YouTube/B站港澳台/TikTok/Steam 等），死节点提前跳过不浪费时间
+- IP 质量：类型（家宽/机房）+ ASN + 风险评分 0-100，ipapi.is 主源，ipwho.is / api.ip.sb 回退
+- 复用检测四档：完全复用 / 中转复用 / 落地复用，一眼看穿机场共用线路（借鉴 SSRSpeedN）
+- 流量倍率：订阅计费流量增量 ÷ 实测下载字节，校验机场是否虚标流量
+- 网页模拟：并发加载 4 个代表性站点记首字节耗时，落地 CN 自动换国内站点（百度/哔哩哔哩/腾讯）
+- 补测机制：报告前自动补测超时节点，恢复的节点补跑测速
+- 输出：PNG 可视化报告（柱状图/风险配色/复用标注）+ JSON 结构化数据 + JSONL 结构化日志（订阅 token 自动遮蔽）
 
 ## 安装与运行
 
 ### 环境要求
 
 - Windows / Linux / macOS
-- Python 3.8+
+- Python 3.9+
 - 依赖：`pip install -r core/requirements.txt`
 - mihomo 内核无需手动下载，首次运行时自动下载到 `bin/`（约 47MB）
 
@@ -66,17 +72,22 @@ pip install -r core/requirements.txt
 
 ### 运行方式
 
-双击 `run.bat`（或命令行）：
+双击 `run.bat` 进入交互菜单，或命令行直接执行：
+
+| 命令 | 说明 |
+|---|---|
+| `python core/speed_test.py` | 交互菜单（等价于双击 run.bat） |
+| `python core/speed_test.py <URL>` | 直接测速（简单模式：TCP Ping + HTTP 测速） |
+| `python core/speed_test.py <URL> --full` | 完整测速（+ 流媒体解锁 + IP 质量 + 网页模拟） |
+| `python core/speed_test.py <URL> --fast` | 快速模式（5 秒测速窗口 / 跳过 IP 检测） |
+| `python core/speed_test.py <URL> --workers N` | 流媒体/IP/网页并行数（1-8，默认 4；测速恒串行） |
+| `python core/speed_test.py --report` | 打开上次报告 |
+| `python core/speed_test.py --menu` | 强制显示菜单 |
+| `python core/speed_test.py -h` | 查看帮助 |
 
 ```bash
-cd 机场测速 && python core/speed_test.py              # 交互菜单
-cd 机场测速 && python core/speed_test.py <URL>         # 直接测速（简单模式）
-cd 机场测速 && python core/speed_test.py <URL> --full  # 完整测速
-cd 机场测速 && python core/speed_test.py <URL> --fast  # 快速模式(5s窗口/跳过IP检测)
-cd 机场测速 && python core/speed_test.py <URL> --workers N  # 流媒体/IP并行数(1-8,默认4)
-cd 机场测速 && python core/speed_test.py --report      # 打开上次报告
-cd 机场测速 && python core/speed_test.py --menu        # 强制显示菜单
-cd 机场测速 && python core/speed_test.py -h            # 帮助
+python core/speed_test.py https://你的订阅链接 --fast   # 5 分钟快速摸底
+python core/speed_test.py https://你的订阅链接 --full   # 完整报告
 ```
 
 订阅 URL 默认从项目根目录的 `代理.txt` 读取（每行一个 URL）。仓库不含该文件：复制 `代理.txt.example` 为 `代理.txt` 后填写（已加入 .gitignore，不会误传）。
@@ -86,18 +97,38 @@ cd 机场测速 && python core/speed_test.py -h            # 帮助
 | 选项 | 说明 |
 |---|---|
 | 1. 简单测速 | TCP 检测 + HTTP 测速（最快） |
-| 2. 标准测试 | 测速 + 9 个常用流媒体 + IP 质量 |
+| 2. 标准测试 | 测速 + 9 个常用流媒体 + IP 质量 + 网页模拟 |
 | 3. AI 流媒体 | 8 个 AI 平台检测 |
 | 4. 全部流媒体 | 34 个平台全测 |
+| 5. 查看上次结果 | 打开 output 目录最新的 PNG 报告 |
+| 6. 更新内核 | 下载最新 mihomo 内核（先下载后替换） |
+| 7. 退出 | 退出程序 |
+
+### 控制台输出示例
+
+（`--fast` 模式节选，数值因网络而异；节点国旗在控制台显示为国家代码）
+
+```
+2026-08-01 21:30:05 INFO  解析完成：33 个节点（vmess 20 / vless 8 / trojan 5）
+2026-08-01 21:30:09 INFO  TCP 检测完成：26/33 可达，平均延迟 128ms
+2026-08-01 21:30:10 INFO  [JP] 日本-东京-01 延迟 45ms，开始测速
+2026-08-01 21:30:22 INFO  [JP] 日本-东京-01 平均 21.3MB/s，峰值 34.5MB/s
+2026-08-01 21:30:23 INFO  [HK] 香港-荃湾-02 延迟 62ms，开始测速
+2026-08-01 21:30:36 INFO  [HK] 香港-荃湾-02 平均 15.8MB/s，峰值 28.1MB/s
+2026-08-01 21:30:37 INFO  [US] 美国-洛杉矶-03 延迟 168ms，开始测速
+2026-08-01 21:30:50 INFO  [US] 美国-洛杉矶-03 平均 9.2MB/s，峰值 12.6MB/s
+2026-08-01 21:33:52 INFO  测试完成，共 3 分 47 秒
+2026-08-01 21:33:52 INFO  报告已生成：output/测速结果_fast_20260801_213352.png
+2026-08-01 21:33:52 INFO  JSON 已导出：output/测速结果_fast_20260801_213352.json
+```
 
 ## 测试流程
 
 ```
-订阅URL → 多UA尝试解析 → TCP检测(直连并发+重试 | mihomo隧道并发探测) 
-→ HTTP测速(节点串行,每节点4连接多源聚合,8秒窗口) 
-→ 补测超时节点(直连+隧道重试,恢复则补测速) 
-→ 流媒体解锁(前3服务预检,死节点跳过) → IP质量(多源回退) 
-→ PNG + JSON 导出
+订阅URL(可多个,捕获subscription-userinfo) → 多UA尝试解析 → TCP检测(直连并发+重试3次丢包率 | mihomo隧道并发探测兜底)
+→ HTTP测速(节点串行,每节点4连接多源聚合,8s窗口) → 补测超时节点(直连+隧道重试,恢复则补测速)
+→ 流媒体解锁(前3服务预检+死节点跳过) → IP质量(多源回退) → 网页模拟(落地CN换国内站点)
+→ 复用四档+流量倍率(重拉订阅头) → PNG + JSON 导出
 ```
 
 ## 报告术语解释
@@ -171,12 +202,18 @@ cd 机场测速 && python core/speed_test.py -h            # 帮助
 | `高(60+)` | IP 风控风险高（Tor/滥用/多重代理特征） |
 | `--` | 该列无数据（IP 检测失败或数据源不提供该字段） |
 | ASN 列 | 出口 IP 的自治域号与所属组织 |
+| `完全复用` | 该节点入口与落地 IP 都和其他节点相同（同一台服务器同一落地） |
+| `中转复用` | 入口与其他节点相同、落地 IP 不同（同一台入口服务器中转） |
+| `落地复用` | 入口不同、落地 IP 与其他节点相同（多个入口共用同一落地） |
+| `网页均耗` | 网页模拟测速：4 个代表性站点首字节耗时的平均值（落地 CN 时换国内站点） |
+| `312ms(1丢)` | 延迟 312ms 且 3 次 TCP 握手中失败 1 次（丢包/抖动提示） |
 
 ### 页脚统计
 
 - `节点: 26/33 可达` — 直连成功 + 隧道探测成功之和 / 节点总数
 - `平均延迟` — 直连 TCP 成功节点的平均延迟
 - `UDP节点: 4 个(经HTTP实测)` — UDP 系节点数（其可达性由隧道探测判定）
+- `流量倍率: 1.02` — 订阅服务器计费流量增量 ÷ 实测下载字节（≈1 表示不虚标；依赖订阅服务器支持 `subscription-userinfo` 响应头，不支持则不显示）
 - `测试耗时` — 整轮测试用时
 
 ## 排序方式
@@ -190,11 +227,13 @@ cd 机场测速 && python core/speed_test.py -h            # 帮助
 - `name` / `type` / `server` / `port` — 节点基本信息
 - `udp_node` / `udp_type` — 是否 UDP 传输及传输层类型
 - `tcp_ping_ms` — 直连 TCP 延迟（null=失败）
+- `tcp_loss` — 3 次 TCP 握手的失败次数（0=无丢包；UDP 节点为 null）
 - `tcp_probe` — 隧道探测结果（true/false/null=未探测）
 - `http_latency_ms` / `speed_mbs` / `max_speed_mbs` — 延迟与速度
 - `speed_per_sec_mbs` — 每秒速度数组（柱状图数据）
 - `streaming` — 各平台检测结果（键为平台 id，值为状态文本）
-- `ip_info` — IP 质量信息（含 risk_score/share_level/source）
+- `ip_info` — IP 质量信息（含 risk_score/share_level/source/reuse 复用档位）
+- `webpage` — 网页模拟测速均耗（毫秒；未检测为 null）
 - `error` — 节点级错误（如"速度过低"）
 
 ## 常见问题
@@ -223,12 +262,26 @@ cd 机场测速 && python core/speed_test.py -h            # 帮助
 **运行报错了怎么办？**
 把 `log/` 文件夹里最新的 `测速日志_*.jsonl` 文件发来即可——里面记录了运行环境（Python 版本/依赖版本）、每一步操作、每个节点的完整明细和报错堆栈，不用截图。
 
+**首次运行提示 mihomo 下载失败？**
+mihomo 内核需要从 GitHub 下载（约 47MB），国内网络可能失败。可以：1) 检查网络后重试；2) 手动下载 mihomo 的 Windows zip，把解压出的 `mihomo.exe` 放进 `bin/` 目录；3) 能上 GitHub 后运行菜单 `6 更新内核`。
+
 ## 已知限制
 
-- IP 质量检测依赖免费 API（ipapi.is 主源，ipwho.is / api.ip.sb 回退），无风控字段的源不编造风险值（显示 `--`）
+- IP 质量检测依赖免费 API：ipapi.is 主源（提供机房/代理/VPN/Tor/滥用标志与 ASN，免费接口无移动网络标志，家宽含移动网络）；ipwho.is / api.ip.sb 为回退源（免费版仅地理与 ASN，无风控字段，类型/风险显示 `--`）；风险分为工具本地启发式评分（0-100，机房+20/代理+25/VPN+20/Tor+35/滥用+25/爬虫+10），非第三方风控分
 - 本机无 IPv6 网络时，IPv6 节点必然测不通（工具已尽量探测标注，属环境限制）
 - 报告最多显示前 300 个节点
+- 油管下载源默认隐藏（`core/speed_test.py` 里 `YOUTUBE_SOURCE_ENABLED = False`）；如需启用第 4 个测速源（googlevideo 直链），改为 `True` 并安装 yt-dlp
 - 测速会消耗节点流量（每节点约 10-30MB），"勿跑大流量"节点请谨慎全量测试
+- 流量倍率依赖订阅服务器在响应头返回 `subscription-userinfo`（主流机场面板均支持），且计费流量增量有更新延迟——倍率仅供参考
+- 网页模拟测速会在标准/完整测试中为每个节点额外增加约 3-8 秒（4 站点并发、8 秒超时）；`--fast` 模式跳过
+- TCP 丢包率为 3 次握手的失败计数，对瞬时抖动敏感，仅作参考
+
+## 更新记录与致谢
+
+- 版本变更见 [CHANGELOG](CHANGELOG.md)（按 新增/修改/修复/移除 四栏记录，只陈述事实）
+- 测速引擎：[mihomo](https://github.com/MetaCubeX/mihomo)（内核自动下载，无需手动配置）
+- 复用检测、网页模拟、流量倍率的思路借鉴 [SSRSpeedN](https://github.com/PauperZ/SSRSpeedN)
+- 遇到问题请到 [Issues](https://github.com/oscyfmau/airport-speedtest/issues) 反馈，附上 `log/` 文件夹里最新的 `测速日志_*.jsonl`（订阅链接请勿粘贴，含敏感 token）
 
 ## 文件结构
 
@@ -237,13 +290,8 @@ cd 机场测速 && python core/speed_test.py -h            # 帮助
 ├── run.bat              # 启动脚本（唯一入口）
 ├── 代理.txt.example     # 订阅 URL 模板（复制为 代理.txt 使用）
 ├── 代理.txt             # 订阅 URL，每行一个（敏感，不入库）
-├── README.md            # 中文使用说明（本文件）
-├── README_EN.md         # English README
-├── assets/
-│   └── preview_report.png # 示例报告图（演示数据）
-├── CHANGELOG.md         # 版本变更记录
-├── LICENSE              # MIT 协议
-├── .gitignore           # 排除敏感文件与运行产物
+├── .github/
+│   └── ISSUE_TEMPLATE/  # Bug 报告与功能建议表单
 ├── core/
 │   ├── speed_test.py    # 全部核心逻辑（单一数据源）
 │   ├── config.py        # 常量重导出
@@ -255,7 +303,9 @@ cd 机场测速 && python core/speed_test.py -h            # 帮助
 │   └── requirements.txt # Python 依赖
 ├── bin/                 # mihomo 内核（自动下载，不入库）
 ├── output/              # PNG 报告 + JSON 数据（不入库）
-└── log/                 # JSONL 运行日志（不入库，报错时发这个目录的文件）
+├── log/                 # JSONL 运行日志（不入库，报错时发这个目录的文件）
+├── docs/                # 文档：README×2 / CHANGELOG / LICENSE / 示例报告图 / 社交预览图
+└── .gitignore           # 排除敏感文件与运行产物
 ```
 
 ## 许可证

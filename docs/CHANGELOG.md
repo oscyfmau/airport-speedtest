@@ -8,11 +8,29 @@
 
 ---
 
-## v4.8
+## v4.9.0
 
 ### 新增
-- 日志独立目录 `log/`（常量 `LOG_DIR`）；文件日志改为 **JSONL**：`log/测速日志_YYYYMMDD_HHMMSS.jsonl`，每行一个 JSON 对象 `{"ts","level","event","msg","data"}`；`JsonlFileHandler` 逐条 flush（强杀/关窗口不丢已写内容）
-- `new_run_log()`：每次测试运行新建独立 JSONL 文件（修复菜单多次运行混写同一文件的时间线混乱）
+- **TCP Ping 丢包率**：`tcp_ping_retry` 重试 2→3 次，返回 (最小延迟, 成功次数)；报告延迟列显示 `312ms(1丢)`（有丢失时），JSON 新增 `tcp_loss` 字段（UDP 节点为 null）
+- **复用检测四档**（借鉴 SSRSpeedN）：`_mark_reuse` 按入口（node.server）与落地 IP 统计——完全复用（入口+落地都相同）/中转复用（入口同、落地异）/落地复用（入口异、落地同），O(n)，结果写入 `ip_info.reuse`；报告 normal/full 模式新增"复用"列
+- **网页模拟测速**（借鉴 SSRSpeedN）：`WPS_INTERNATIONAL_URLS`（google generate_204 / youtube / bing / github）+ `WPS_CN_URLS`（baidu / bilibili / qq），落地国家为 CN 时自动换国内站点；`check_one_node_webpage` 并发 GET 记首字节耗时（失败=-1），汇总 `avg_ms`；normal/full 模式在 IP 检测后自动运行（`--fast` 跳过、basic/streaming 模式不跑）；报告新增"网页均耗(ms)"列；JSON 新增 `webpage` 字段；事件 `webpage_done`
+- **流量倍率**（借鉴 SSRSpeedN）：解析阶段捕获订阅响应头 `subscription-userinfo`（`_SUB_INFO`，首个带 header 的响应为准）；测速阶段累计实测下载字节（`_RUN_BYTES`）；Step 7 重拉订阅头取 download 增量（`_fetch_sub_usage`），倍率 = 计费流量增量 ÷ 实测字节（`_RATE_INFO`）；控制台输出"流量倍率: X.XX" + 事件 `rate_done` + 报告页脚追加"流量倍率: X.XX"；订阅服务器不支持该 header 时静默跳过
+
+### 修改
+- normal/full 模式阶段 4 加入网页模拟（步骤标签"流媒体/IP/网页检测"，streaming 模式标签不变）；`node_tasks` 3 元组扩为 4 元组（增加 do_web）
+- 报告 normal/full 列布局新增"复用"、"网页均耗"两列（有对应数据时才渲染）
+- `run_tcp_ping` 返回结构由 {名称: 延迟} 改为 {名称: (延迟, 成功次数)}，run_test 初测与补测两处调用点同步
+- README×2 重构（GitHub 页面工程）：头部改为一句话简介 + 徽章 4 枚（License/Release/Python/Downloads，统一 flat-square 风格）；命令行参数改为表格；新增 `[!IMPORTANT]`/`[!NOTE]` 提示块（订阅 token 敏感、测速消耗流量）；新增控制台输出示例（--fast 节选）；特性列表 14 条压缩为 10 条；JSON 数据说明补 `tcp_loss`/`webpage`/`reuse` 字段；新增「更新记录与致谢」一节（CHANGELOG 入口 + mihomo/SSRSpeedN 致谢 + Issues 反馈指引）
+- 新增 `.github/ISSUE_TEMPLATE/`：bug_report.yml（要求附 log/ 的 jsonl）、feature_request.yml、config.yml（关闭空白 issue，链接 README 常见问题）
+- 新增 `docs/social_preview.png`：1280x640 社交预览图（报告缩略图 + 控制台输出模拟，假数据）
+
+---
+
+## v4.8.1
+
+### 新增
+- 日志独立目录 `log/`（常量 `LOG_DIR`）；文件日志改为 JSONL：`log/测速日志_YYYYMMDD_HHMMSS.jsonl`（每次运行新建一个文件，`log/` 只保留最新一个），每行一个 JSON 对象 `{"ts","level","event","msg","data"}`；`JsonlFileHandler` 逐条 flush（强杀/关窗口不丢已写内容）
+- `new_run_log()`：每次测试运行新建一个 JSONL 文件，并删除更早的日志文件（`log/` 只保留最新一个；菜单多次运行不混写同一文件）
 - 结构化事件系统 `_ev(event, data)`（logger extra，控制台忽略、JSONL 记录），事件清单：
   - 运行级：`run_start`（版本/Python 版本/平台/argv/模式/workers/fast/依赖版本）、`run_end`（耗时/节点数/产物路径）、`run_exception`、`uncaught_exception`（全局 `sys.excepthook` + main 兜底，完整 traceback）、`user_interrupt`（含中断阶段）
   - 解析：`parse_done`（节点总数、按类型计数）、`fetch_fallback`（cloudscraper 回退 requests 的原因）
@@ -25,15 +43,55 @@
 - 中断提示明确化：中断时提示中断阶段并注明本次为不完整结果
 
 ### 修改
+- 油管下载源默认隐藏：新增 `YOUTUBE_SOURCE_ENABLED = False` 开关——关闭时不解析、不产生任何油管相关日志，只测 3 个基础源；改为 `True` 恢复第 4 源行为（代码与 yt-dlp 依赖保留）
 - requirements.txt 最低版本提升（防 Python 3.12 缺 cp312 wheel 触发源码编译失败）：`aiohttp>=3.9.5`、`PyYAML>=6.0.1`、`Pillow>=10.1.0`、`tqdm>=4.66.1`、`cloudscraper>=1.2.71`
 - run.bat：`where python` 找不到时回退 `py -3` 启动器；依赖安装改 `py -m pip`
 - `_try_fetch`：cloudscraper 回退 requests 时记录 `fetch_fallback` 事件
+- 文件结构整理（不动代码）：`README.md`、`README_EN.md`、`CHANGELOG.md`、`LICENSE`、示例报告图 `preview_report.png` 移入 `docs/` 目录（原 `assets/` 目录删除）；两个 README 的文件结构段落与图片相对路径同步更新
+- 版本号改用 SemVer（X.Y.Z）：`VERSION = "4.8.1"`（此前 "v4.8"）；PNG 页眉/页脚与菜单标题显示 `v{VERSION}`，JSON 导出 `version` 字段为纯数字
+- run.bat：依赖安装提示"首次可能需要几分钟"、成功后 `[OK] 依赖安装完成`、失败提示国内镜像 `pip install -r core\requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple`
+- mihomo 下载失败时控制台追加修复指引（手动把 mihomo.exe 放入 bin/ 或菜单 6 更新内核）；README×2 FAQ 增补对应条目
+- README×2：菜单表补全 5/6/7 项；FAQ 日志文件名 `测速日志_*.json` → `.jsonl`；PNG 国旗表述改"控制台与 PNG 均显示国家代码"
+- `_ipapi_to_info`：按 ipapi.is 免费接口实际扁平响应重写映射——实测返回 `cc`/`company_name`/`asn_num`/`asn_org` 等扁平字段（无 `location`/`asn`/`company` 嵌套对象、无城市与移动网络标志），此前映射读嵌套对象导致主源的国家/ISP/ASN/组织全部为空（报告 ASN 列显示 `--`）
+- `_ipwho_to_info`：免费接口（含 `?security=1` 参数）实测无 `security` 字段、`type` 恒为 IPv4/IPv6——无风控数据时类型/风险标志置 None（报告显示 `--`，不编造），此前全部按 False 处理误报"家宽 IP / 风险 0%"；有 `security` 字段时仍按原逻辑映射
 
 ### 修复
-- run.bat 被重写为 LF 行尾（cmd.exe 无法正确解析多行 if 块与 goto 标签，双击直接报错）→ 恢复 CRLF 行尾
+- **安全（P1）**：`run_start` 事件的 `argv` 中 http(s) 参数经 `_mask_url` 遮蔽——此前 CLI 直传订阅 URL（`python speed_test.py "https://xxx/sub?token=SECRET"`）时 token 明文写入 JSONL 日志
+- run.bat 被重写为 LF 行尾（cmd.exe 无法正确解析多行 if 块与 goto 标签，双击直接报错）→ 恢复 CRLF 行尾并加 `.gitattributes`（`*.bat -text`）保证 zip 分发字节正确
 - run.bat 括号块内嵌套 `%ERRORLEVEL%` 比较（批处理为解析期展开、取值过期）导致 `py -3` 回退分支永不生效 → 改为 `if errorlevel 1` 动态判断 + goto 标签结构
-- run.bat 新增 python 真实可用性校验（`python -c "import sys"`），防止微软商店 python.exe 别名导致假阳性
+- run.bat：`where python` 结果只认 `.exe`（跳过微软商店别名与 .cmd/.bat 垫片——批处理调用批处理不会返回控制流，实测复现静默终止）；依赖安装失败时提示并退出
+- run.bat 与文档的 Python 版本要求改为 **3.9+**（代码使用 PEP 585 泛型注解，3.8 导入即 TypeError；全面审计实证）
+- `new_run_log()`：文件名 1 秒分辨率导致同秒两次运行同文件追加混写（实测复现）→ 同秒自动加毫秒后缀；旧日志文件在新建时统一删除（只保留最新）；进程退出时 `_cleanup_empty_log` 清理空日志（--help/--report/菜单直接退出不再留 0 字节文件）
+- `JsonlFileHandler`：写失败（文件被占用/磁盘满）首次向 stderr 提示一次，不再静默丢日志；`exc_info` 为 `(None,None,None)` 时不再写入误导性 exc
+- 早退路径（订阅为空/解析失败/无节点/提前生成部分报告）补 `run_end(completed=false)` 事件，日志可区分"完成/中断/失败"
+- `_cleanup_stale_configs` 只删超过 6 小时的残留配置（防误删并发运行实例的配置）
+- `_install_excepthook` 链式调用既有 excepthook（不覆盖其他工具的 hook）
+- 测试完成后自动打开 PNG 报告（`async_main` 的 CLI 与菜单两处调用点）——此前只在菜单5/--report 打开，与 README 承诺不符
+- 纯流媒体模式（菜单3/4）补 mihomo 二进制存在性检查——此前缺失时串行路径抛 RuntimeError
+- `run_test` 的 `workers` 参数钳制到 1-8（防异常入参开过多 mihomo 进程）
 - 标准测试（菜单2）流媒体路径核查确认无功能 bug（菜单2 → normal → full + 9 常用流媒体 + IP；`check_one_node_streaming(services=None)` 兜底 FULL 34 平台）；此前"没测到流媒体"系测试中途 Ctrl+C 中断导致（中断前的 JSON 流媒体为空），现由 `user_interrupt` 事件明确记录
+- **安全（P0）**：订阅抓取失败时 requests/cloudscraper 异常文本携带完整订阅 URL（含 token）进入控制台与 JSONL（实测复现 `ConnectTimeout: ... url: /sub?token=SECRET123&flag=clash`）→ 新增 `_safe_exc_str`（异常文本内完整 URL 与 `url: /path?token=` 相对形式统一过 `_mask_url`），`fetch_fallback`、`订阅下载失败` RuntimeError、两处 UA 拉取失败、`订阅解析失败`、run_test 解析兜底共 6 处日志点改用遮蔽文本
+- `_mask_url` 盲区补全：敏感参数白名单扩展 `sub`/`subid`/`code`/`id`；无 query 时 path 末段长度≥16 且不含 "." 视为内嵌 token 遮蔽（`https://host/xxxx...` 形态）
+- **Ctrl+C 清理失效**：`except asyncio.CancelledError` 吞掉取消后 finally 内首个 await 即再次抛 CancelledError（Python 3.11+ asyncio.run 下 Ctrl+C 主路径），mihomo/worker 清理与部分报告生成被跳过 → 子进程统一登记 `_track_proc` + `main()` 注册 `atexit` 同步兜底 terminate（`_cleanup_procs`）；run_test finally 清理改 `asyncio.shield` 包裹（取消时 stop 在后台跑完）
+- `parse_vless`：`security=tls`/`xtls` 现映射 `tls: true`（此前仅 reality 特判，标准 TLS vless 节点全部误报不可达）；reality 分支补 `tls: true`（mihomo v1.19 `-t` 实测报 "REALITY requires TLS"）；security 为 reality/tls/xtls 时映射 `servername`（`sni` 优先、`host` 兜底，add 为 IP 时证书校验必需）
+- `parse_vmess`：`tls` 时映射 `servername`（`sni`/`host`）；`net=grpc` 时映射 `grpc-opts.grpc-service-name`（v2rayN 把 serviceName 放 `path` 字段，两处都读）
+- `parse_vless`：`type=grpc` 时映射 `grpc-opts.grpc-service-name`（`serviceName`/`path`）
+- YAML 订阅：识别改 `_looks_like_yaml`（容忍 `#`/`//` 注释行开头，此前注释头导致整份订阅报"未解析到任何节点"）；YAML 路径与 URI 路径统一过 `_is_valid_node` + `_dedupe_nodes`（此前 naive/juicity/本地地址/重名节点原样进配置，单条即可致整份配置加载失败）
+- `_is_valid_node` 过滤名为 `DIRECT`/`Auto` 的节点（与 mihomo 内置名称冲突，`_build_config_dict` 实测产生 `['DIRECT','Auto','DIRECT']` 组）
+- hysteria2/hysteria/tuic：`insecure` 判定 `== "true"` → `in ("true","1","yes")`（实测 `insecure=1` 此前不生效）
+- `_parse_userhost_port`：username 现 `unquote`（实测 `user%40name` 此前原样进配置致认证失败）
+- `parse_ssr`：`obfsparam` 明文值（如 `tls1.2_ticket_auth`）此前 b64 解码抛异常致整条节点被静默丢弃 → 解码失败回退保留明文
+- `MihomoEngine.start`：轮询中检测 `process.poll()`，进程秒退（配置错误/二进制损坏）立即报错，不再等满 15s
+- `_download_mihomo`：候选名追加 `mihomo-{plat}-v1-{tag}.zip`（v1.19.29 起官方新增 v1/v2/v3 变体；plain 名经各版本 API 核对目前保留，防未来移除）
+- `check_steam`：cookie 兜底同时查 `steamCountry`/`steamcountry`（实测响应头为 `steamCountry` 大写 C，原查询永不命中）；body 正则改 `re.IGNORECASE`
+- `check_spotify`：Location 无国家码时跟到落地页提取 `"territory"` 字段（实测现代 Spotify 统一 301 → `https://open.spotify.com/`，旧式 `/xx/` 国家码路径已消失）
+- 报告图片生成失败时不再中断后续：Step7 与 `_finish_partial` 包 try/except，图片失败仍导出 JSON
+- 串行 IP 检测 `same_ip_warning` 改 seen_ips 全集比较（此前只比相邻节点，`--workers 1` 与并行路径行为不一致）
+- 报告渲染：PNG 节点名套 `_flag_to_text`（国旗 emoji 此前渲染为空心方框，实测 msyh 无区域指示符字形）+ 超 24 字符截断补省略号；`normal/full` 列头 "TLS延迟"→"延迟RTT"（数据为 TCP 握手）；HTTP延迟无数据显示 `--`（此前显示"超时"，与 README 术语表不符）；流媒体列按 `FULL_STREAMING_SERVICES` 定义顺序（此前 set 迭代乱序）；CLI `--full` 页眉"标准测试"→"完整测速"；`ip_risk` 无数据 `--` 灰色（此前按 0 分染绿）
+- CLI：未知参数加 `logger.warning`（此前 `--falt` 等拼错静默忽略）；`-i` 缺参数提示并跳过；`--workers N` 值参数跳过后续解析；帮助文本路径改 `python core/speed_test.py` 并补 `--workers=4` 等号形式
+- 菜单：空回车重绘菜单（此前报"无效选择"）；完成文案改"测试完成! 耗时 X 秒，共 N 个节点"
+- `_YOUTUBE_DL_URL` 每次 `run_test` 开始重置（此前菜单连续运行复用上一次 googlevideo 签名 URL，约 6h 过期）
+- `main()`：stdout/stderr 非 TTY 时 `reconfigure(encoding="utf-8")`（Windows 重定向/管道此前按 ANSI 代码页输出乱码）
 
 ### 移除
 - 旧文本文件日志（`output/测速日志_*.log`），由 `log/*.jsonl` 取代
