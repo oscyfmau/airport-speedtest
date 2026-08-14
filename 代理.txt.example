@@ -1,0 +1,3 @@
+# 订阅 URL 模板：复制本文件为「代理.txt」后填写，每行一个订阅 URL
+# 例：https://example.com/api/v1/client/subscribe?token=你的订阅token
+# 注意：代理.txt 包含敏感信息，已被 .gitignore 排除，不会上传到仓库

@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+
+# 敏感文件：订阅 URL（请复制 代理.txt.example 为 代理.txt 后填写）
+代理.txt
+
+# mihomo 内核（首次运行自动下载）
+bin/
+
+# 运行产物（PNG 报告 / JSON 数据 / 测速日志）
+output/
+
+# 临时验证脚本
+_verify*.py

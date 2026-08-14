@@ -1,0 +1,7 @@
+aiohttp>=3.9.0
+PyYAML>=6.0
+Pillow>=10.0
+tqdm>=4.65
+requests>=2.31.0
+cloudscraper>=1.2.0
+yt-dlp>=2025.1.1
