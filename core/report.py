@@ -436,8 +436,6 @@ def generate_report_image(results, mode, total_time, sort_by="default", display_
     if udp_n:
         ftr2 += f" | UDP节点: {udp_n} 个(经HTTP实测)"
     ftr2 += f" | 排序: {sort_names.get(sort_by, sort_by)}"
-    if state._RATE_INFO:
-        ftr2 += f" | 流量倍率: {round(sum(state._RATE_INFO.values()) / len(state._RATE_INFO), 2)}"
     # 本地时区名（不用硬编码 CST：非中国时区用户标注才正确）
     tz_name = time.strftime("%Z") or "本地时间"
     ftr3 = (f"测试时间: {time.strftime('%Y-%m-%d %H:%M:%S')} ({tz_name})"

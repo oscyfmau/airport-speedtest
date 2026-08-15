@@ -9,7 +9,7 @@
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Downloads](https://img.shields.io/github/downloads/oscyfmau/airport-speedtest/total?style=flat-square)](https://github.com/oscyfmau/airport-speedtest/releases)
 
-版本：v4.19.0 ｜ 仓库：[github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) ｜ [更新记录](CHANGELOG.md)
+版本：v4.21.0 ｜ 仓库：[github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) ｜ [更新记录](CHANGELOG.md)
 
 > 本项目由 AI 编写完成，因个人测速需求而开发，按需取用。
 
@@ -21,7 +21,7 @@
 
 ## 快速上手（三步，不会命令行也能用）
 
-1. **下载**：打开 [Releases 页面](https://github.com/oscyfmau/airport-speedtest/releases)，下载最新版的 `airport-speedtest-v4.18.0.zip`（精简包，含运行所需的全部文件）并解压，解压后先看里面的 `使用教程.txt`（会用 git 也可以 `git clone`）
+1. **下载**：打开 [Releases 页面](https://github.com/oscyfmau/airport-speedtest/releases)，下载最新版的 `airport-speedtest-v4.21.0.zip`（精简包，含运行所需的全部文件）并解压，解压后先看里面的 `使用教程.txt`（会用 git 也可以 `git clone`）
 2. **填订阅**：把解压目录里的 `代理.txt.example` 复制一份，改名为 `代理.txt`，用记事本打开，粘贴你的订阅链接后保存
    - 什么是订阅链接？机场服务商提供的网址（一般以 `https://` 开头，内含全部节点信息），在机场官网或客户端 App 的「复制订阅」处获得
 3. **运行**：
@@ -45,7 +45,6 @@ mihomo 内核无需手动下载，首次运行时自动下载到 `bin/`（约 47
 - 流媒体解锁：33 个平台、10 个专用检测器（Netflix/Disney/YouTube/B站港澳台/TikTok/Steam 等），死节点提前跳过不浪费时间
 - IP 质量：类型（家宽/机房/代理/移动）+ ASN + 风险评分 0-100，ip-api.com 主源，ipapi.is / ipwho.is / api.ip.sb 回退
 - 复用检测四档：完全复用 / 中转复用 / 落地复用，一眼看穿机场共用线路（借鉴 SSRSpeedN）
-- 流量倍率：订阅计费流量增量 ÷ 实测下载字节，校验机场是否虚标流量
 - 网页模拟：并发加载 4 个代表性站点记首字节耗时，落地 CN 自动换国内站点（百度/哔哩哔哩/腾讯）
 - 补测机制：报告前自动补测超时节点，恢复的节点补跑测速
 - 输出：PNG 可视化报告（柱状图/风险配色/复用标注）+ JSON 结构化数据 + JSONL 结构化日志（订阅 token 自动遮蔽）
@@ -66,7 +65,7 @@ mihomo 内核无需手动下载，首次运行时自动下载到 `bin/`（约 47
 
 两种方式任选：
 
-- 不用 git：到 [Releases 页面](https://github.com/oscyfmau/airport-speedtest/releases) 下载最新版 `airport-speedtest-v4.18.0.zip`（精简包，仅含运行核心文件）并解压；需要自行改代码时再下载 `Source code (zip)`
+- 不用 git：到 [Releases 页面](https://github.com/oscyfmau/airport-speedtest/releases) 下载最新版 `airport-speedtest-v4.21.0.zip`（精简包，仅含运行核心文件）并解压；需要自行改代码时再下载 `Source code (zip)`
 - 用 git：
 
 ```bash
@@ -149,7 +148,7 @@ python core/speed_test.py https://你的订阅链接 --full   # 完整报告
 订阅URL(可多个,捕获subscription-userinfo) → 多UA尝试解析 → TCP检测(直连并发+重试3次丢包率 | mihomo隧道并发探测兜底)
 → HTTP测速(节点串行,每节点4连接多源聚合,8s窗口) → 补测超时节点(直连+隧道重试,恢复则补测速)
 → 流媒体解锁(前3服务预检+死节点跳过) → IP质量(多源回退) → 网页模拟(落地CN换国内站点)
-→ 复用四档+流量倍率(重拉订阅头) → PNG + JSON 导出
+→ 复用四档 → PNG + JSON 导出
 ```
 
 ## 报告术语解释
@@ -234,7 +233,6 @@ python core/speed_test.py https://你的订阅链接 --full   # 完整报告
 - `节点: 26/33 可达` — 直连成功 + 隧道探测成功之和 / 节点总数
 - `平均延迟` — 直连 TCP 成功节点的平均延迟
 - `UDP节点: 4 个(经HTTP实测)` — UDP 系节点数（其可达性由隧道探测判定）
-- `流量倍率: 1.02` — 订阅服务器计费流量增量 ÷ 实测下载字节（≈1 表示不虚标；依赖订阅服务器支持 `subscription-userinfo` 响应头，不支持则不显示）
 - `测试耗时` — 整轮测试用时
 
 ## 排序方式
@@ -293,10 +291,9 @@ mihomo 内核需要从 GitHub 下载（约 47MB），国内网络可能失败。
 - 报告最多显示前 300 个节点
 - 油管下载源默认隐藏（`core/speed_test.py` 里 `YOUTUBE_SOURCE_ENABLED = False`）；如需启用第 4 个测速源（googlevideo 直链），改为 `True` 并安装 yt-dlp
 - 测速会消耗节点流量（每节点约 10-30MB），"勿跑大流量"节点请谨慎全量测试
-- 流量倍率依赖订阅服务器在响应头返回 `subscription-userinfo`（主流机场面板均支持），且计费流量增量有更新延迟——倍率仅供参考
 - 网页模拟测速会在标准/完整测试中为每个节点额外增加约 3-8 秒（4 站点并发、8 秒超时）；`--fast` 模式跳过
 - TCP 丢包率为 3 次握手的失败计数，对瞬时抖动敏感，仅作参考
-- 平台支持（v4.19.0）：Linux / macOS 未经实测——mihomo 内核自动下载已修复（Windows `.zip` / Linux/macOS `.gz` 格式，x86_64/arm64 架构，下载与解压路径已实测验证）；macOS 手动下载 mihomo 放入 `bin/` 会被 Gatekeeper 拦截（"无法验证开发者"），请用首次运行自动下载或菜单 `6 更新内核`；Linux 无图形界面时报告不会自动打开（`xdg-open` 不存在，不影响测试与手动查看 `output/`），无中文字体时 PNG 报告中文显示为方框（可安装 Noto Sans CJK）
+- 平台支持（v4.21.0）：Linux / macOS 未经实测——mihomo 内核自动下载已修复（Windows `.zip` / Linux/macOS `.gz` 格式，x86_64/arm64 架构，下载与解压路径已实测验证）；macOS 手动下载 mihomo 放入 `bin/` 会被 Gatekeeper 拦截（"无法验证开发者"），请用首次运行自动下载或菜单 `6 更新内核`；Linux 无图形界面时报告不会自动打开（`xdg-open` 不存在，不影响测试与手动查看 `output/`），无中文字体时 PNG 报告中文显示为方框（可安装 Noto Sans CJK）
 
 ### 隐私说明
 
@@ -308,7 +305,7 @@ mihomo 内核需要从 GitHub 下载（约 47MB），国内网络可能失败。
 
 - 版本变更见 [CHANGELOG](CHANGELOG.md)（按 新增/修改/修复/移除 四栏记录，只陈述事实）
 - 测速引擎：[mihomo](https://github.com/MetaCubeX/mihomo)（内核自动下载，无需手动配置）
-- 复用检测、网页模拟、流量倍率的思路借鉴 [SSRSpeedN](https://github.com/PauperZ/SSRSpeedN)
+- 复用检测、网页模拟的思路借鉴 [SSRSpeedN](https://github.com/PauperZ/SSRSpeedN)
 - 遇到问题请到 [Issues](https://github.com/oscyfmau/airport-speedtest/issues) 反馈，附上 `log/` 文件夹里最新的 `测速日志_*.jsonl`（订阅链接请勿粘贴，含敏感 token）
 
 ## 文件结构

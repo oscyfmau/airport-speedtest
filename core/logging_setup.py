@@ -40,7 +40,7 @@ def _cleanup_stale_configs():
 
 
 def setup_logging() -> str:
-    """初始化日志：控制台 INFO（文本）+ 文件 JSONL（log/测速日志_*.jsonl，每次运行新建、只保留最新一个），返回日志文件路径"""
+    """初始化日志：控制台 INFO（文本）+ 文件 JSONL（log/测速日志_*.jsonl，每次 bat 运行一个独立文件、全部保留），返回日志文件路径"""
     global _LOG_FILE, _LOG_HANDLER
     _cleanup_stale_configs()
     logger.setLevel(logging.DEBUG)
@@ -63,13 +63,13 @@ def setup_logging() -> str:
     return new_run_log()
 
 
-# 交互事件：删除旧日志前迁移到新日志，避免菜单选择记录被轮换吞掉
+# 交互事件迁移（v4.20.0 起不再调用：每次 bat 运行一个独立文件、不删除旧日志，无需迁移；函数保留接口）
 _INTERACT_EVENTS = {"menu_choice", "invalid_input", "manual_subscribe_input",
                     "subscribe_select"}
 
 
 def _migrate_interact_lines(old_path: str, new_path: str) -> None:
-    """把旧日志中的交互事件行（菜单选择等）追加到新日志开头"""
+    """把旧日志中的交互事件行（菜单选择等）追加到新日志开头（v4.20.0 起未调用，保留兼容）"""
     try:
         keep = []
         with open(old_path, encoding="utf-8") as f:
@@ -91,9 +91,8 @@ def _migrate_interact_lines(old_path: str, new_path: str) -> None:
 
 
 def new_run_log() -> str:
-    """每次测试运行开始时新建 JSONL 日志文件，并删除更早的日志文件（log/ 只保留最新一个）"""
+    """新建 JSONL 日志文件（v4.20.0 起：每次 bat 运行一个独立文件；不再删除旧日志、不再迁移交互事件，log/ 保留全部历史）"""
     global _LOG_FILE, _LOG_HANDLER
-    old_file = _LOG_FILE
     if _LOG_HANDLER is not None:
         logger.removeHandler(_LOG_HANDLER)
         _LOG_HANDLER.close()
@@ -102,14 +101,6 @@ def new_run_log() -> str:
     path = os.path.join(LOG_DIR, base + ".jsonl")
     if os.path.exists(path):  # 同一秒内多次运行：加后缀避免同名
         path = os.path.join(LOG_DIR, base + f"_{int(time.monotonic() * 1000) % 1000:03d}.jsonl")
-    if old_file and os.path.exists(old_file):
-        _migrate_interact_lines(old_file, path)  # 先迁移交互事件
-    for f in sorted(os.listdir(LOG_DIR)):  # 清理旧日志：只保留最新一个
-        if f.startswith("测速日志_") and f.endswith(".jsonl") and os.path.join(LOG_DIR, f) != path:
-            try:
-                os.remove(os.path.join(LOG_DIR, f))
-            except OSError:
-                pass
     _LOG_FILE = path
     _LOG_HANDLER = JsonlFileHandler(path)
     logger.addHandler(_LOG_HANDLER)

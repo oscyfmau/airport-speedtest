@@ -9,7 +9,7 @@ Pull all nodes from an airport subscription, test latency, speed, streaming unlo
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Downloads](https://img.shields.io/github/downloads/oscyfmau/airport-speedtest/total?style=flat-square)](https://github.com/oscyfmau/airport-speedtest/releases)
 
-Version: v4.19.0 | Repository: [github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) | [Changelog](CHANGELOG.md)
+Version: v4.21.0 | Repository: [github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) | [Changelog](CHANGELOG.md)
 
 > This project was written by AI and developed for personal needs — take it as-is.
 
@@ -21,7 +21,7 @@ Version: v4.19.0 | Repository: [github.com/oscyfmau/airport-speedtest](https://g
 
 ## Quick Start (3 Steps, No Command Line Skills Needed)
 
-1. **Download**: open the [Releases page](https://github.com/oscyfmau/airport-speedtest/releases), download the latest `airport-speedtest-v4.18.0.zip` (a slim package with everything needed to run), unzip it, then read `使用教程.txt` inside first (if you know git you can also `git clone`)
+1. **Download**: open the [Releases page](https://github.com/oscyfmau/airport-speedtest/releases), download the latest `airport-speedtest-v4.21.0.zip` (a slim package with everything needed to run), unzip it, then read `使用教程.txt` inside first (if you know git you can also `git clone`)
 2. **Fill in the subscription**: in the unzipped folder, copy `代理.txt.example`, rename it to `代理.txt`, open it with Notepad, paste your subscription link and save
    - What is a subscription link? A URL provided by your airport service provider (usually starts with `https://` and contains all node info); get it from the "Copy subscription" option on the airport website or in the client app
 3. **Run**:
@@ -45,7 +45,6 @@ The mihomo core downloads automatically on first run to `bin/` (about 47MB) — 
 - Streaming unlock: 33 platforms, 10 dedicated detectors (Netflix/Disney/YouTube/Bilibili TW-HK-MO/TikTok/Steam etc.); dead nodes skipped early
 - IP quality: type (residential/DC/proxy/mobile) + ASN + risk score 0-100; ip-api.com primary, ipapi.is / ipwho.is / api.ip.sb fallback
 - Reuse detection in 4 tiers: full reuse / transit reuse / exit reuse — spot shared airport lines at a glance (inspired by SSRSpeedN)
-- Traffic multiplier: subscription metered-traffic delta ÷ actually downloaded bytes — verify whether the airport inflates traffic
 - Web page simulation: 4 representative sites loaded concurrently, first-byte latency recorded; CN exits auto-switch to domestic sites (Baidu/Bilibili/Tencent)
 - Retest mechanism: timed-out nodes are retested before the report; recovered nodes get a re-run speed test
 - Output: PNG visual report (bar charts / risk colors / reuse marks) + JSON data + JSONL structured logs (subscription tokens auto-masked)
@@ -66,7 +65,7 @@ The mihomo core downloads automatically on first run to `bin/` (about 47MB) — 
 
 Either of the two ways:
 
-- No git: go to the [Releases page](https://github.com/oscyfmau/airport-speedtest/releases), download the latest `airport-speedtest-v4.18.0.zip` (slim package, run core files only) and unzip it; download `Source code (zip)` instead only if you want to modify the code
+- No git: go to the [Releases page](https://github.com/oscyfmau/airport-speedtest/releases), download the latest `airport-speedtest-v4.21.0.zip` (slim package, run core files only) and unzip it; download `Source code (zip)` instead only if you want to modify the code
 - With git:
 
 ```bash
@@ -149,7 +148,7 @@ Node name                         Latency  HTTP    Avg       Max
 Subscription URL(s) (captures subscription-userinfo) → parse with multiple UA attempts → TCP detection (direct concurrent + 3 retries for loss | mihomo tunnel concurrent probe)
 → HTTP speed test (nodes serial, 4 connections per node, multi-source aggregation, 8s window) → retest timed-out nodes (direct + tunnel retry, recovered nodes re-tested)
 → streaming unlock (pre-check first 3 services, skip dead nodes) → IP quality (multi-source fallback) → web page simulation (CN exit switches to domestic sites)
-→ reuse tiers + traffic multiplier (re-fetch subscription header) → PNG + JSON export
+→ reuse tiers → PNG + JSON export
 ```
 
 ## Report Terminology
@@ -234,7 +233,6 @@ Subscription URL(s) (captures subscription-userinfo) → parse with multiple UA 
 - `Nodes: 26/33 reachable` — direct-connect successes + tunnel-probe successes / total nodes
 - `Average latency` — average latency of nodes with successful direct TCP
 - `UDP nodes: 4 (verified via HTTP)` — number of UDP-type nodes (their reachability is determined by tunnel probing)
-- `Traffic multiplier: 1.02` — subscription-server metered traffic delta ÷ actually downloaded bytes (≈1 means no inflation; requires the server to return the `subscription-userinfo` header)
 - `Test duration` — total time of the whole test round
 
 ## Sorting
@@ -293,10 +291,9 @@ The mihomo core is downloaded from GitHub (~47MB) and may fail on some networks.
 - The report shows at most the first 300 nodes
 - The YouTube download source is hidden by default (`YOUTUBE_SOURCE_ENABLED = False` in `core/speed_test.py`); set it to `True` and install yt-dlp to enable the 4th speed-test source (googlevideo direct link)
 - Speed tests consume node traffic (about 10-30MB per node); be cautious about running full tests on "no heavy traffic" nodes
-- Traffic multiplier requires the subscription server to return the `subscription-userinfo` header (most mainstream airport panels do) and metered traffic updates may lag — treat it as a reference only
 - Web page simulation adds about 3-8 seconds per node in standard/full tests (4 sites concurrently, 8s timeout); skipped in `--fast` mode
 - TCP packet loss counts failures across 3 handshakes and is sensitive to transient jitter — reference only
-- Platform support (v4.19.0): Linux / macOS are NOT actually tested — the mihomo core auto-download is now fixed (Windows `.zip` / Linux-macOS `.gz` formats, x86_64/arm64 architectures; the download & decompress path was verified in a simulated Linux environment); on macOS a manually downloaded mihomo placed into `bin/` is blocked by Gatekeeper ("unidentified developer") — use the first-run auto-download or menu option `6 Update core`; on headless Linux the report does not open automatically (`xdg-open` missing; the test itself and manual viewing of `output/` are unaffected), and without a CJK font the PNG report shows boxes for Chinese text (install Noto Sans CJK)
+- Platform support (v4.21.0): Linux / macOS are NOT actually tested — the mihomo core auto-download is now fixed (Windows `.zip` / Linux-macOS `.gz` formats, x86_64/arm64 architectures; the download & decompress path was verified in a simulated Linux environment); on macOS a manually downloaded mihomo placed into `bin/` is blocked by Gatekeeper ("unidentified developer") — use the first-run auto-download or menu option `6 Update core`; on headless Linux the report does not open automatically (`xdg-open` missing; the test itself and manual viewing of `output/` are unaffected), and without a CJK font the PNG report shows boxes for Chinese text (install Noto Sans CJK)
 
 ### Privacy
 
@@ -308,7 +305,7 @@ The mihomo core is downloaded from GitHub (~47MB) and may fail on some networks.
 
 - Version history in [CHANGELOG](CHANGELOG.md) (Added/Changed/Fixed/Removed columns, facts only)
 - Speed test engine: [mihomo](https://github.com/MetaCubeX/mihomo) (core auto-downloaded, no manual config)
-- Reuse detection, web page simulation and traffic multiplier inspired by [SSRSpeedN](https://github.com/PauperZ/SSRSpeedN)
+- Reuse detection and web page simulation inspired by [SSRSpeedN](https://github.com/PauperZ/SSRSpeedN)
 - Report issues at [Issues](https://github.com/oscyfmau/airport-speedtest/issues) with the latest `测速日志_*.jsonl` from the `log/` folder (never paste subscription links — they contain sensitive tokens)
 
 ## File Structure

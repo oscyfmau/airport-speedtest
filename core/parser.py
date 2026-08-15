@@ -610,7 +610,7 @@ def _try_fetch(url: str, ua: str) -> str:
                 scraper.close()
             except Exception:
                 pass
-    # 捕获订阅流量信息（流量倍率用）：首个带 header 的响应为准
+    # 捕获订阅流量信息（v4.20.0 起流量倍率停用，_SUB_INFO 仅保留接口）：首个带 header 的响应为准
     try:
         if not state._SUB_INFO.get(url):
             info = _parse_userinfo(resp.headers)
@@ -753,7 +753,7 @@ def parse_subscription_urls(urls: list) -> list[ProxyNode]:
 
 
 def _fetch_sub_usage(urls: list) -> dict:
-    """测速后重拉订阅头（每 URL 一次），返回 {url: download 字节}——流量倍率用"""
+    """测速后重拉订阅头（每 URL 一次），返回 {url: download 字节}（v4.20.0 起流量倍率停用，接口保留未调用）"""
     out: dict = {}
     for url in urls:
         try:

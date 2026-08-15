@@ -167,7 +167,6 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
     output_mode = mode  # 保留原始模式名（streaming_ai/streaming_all），供文件名/报告头/JSON
     workers = max(1, min(int(workers), MAX_WORKERS))  # 钳制并行度，防异常入参开过多 mihomo 进程
     phase = "初始化"  # 当前阶段（中断事件记录用）
-    new_run_log()
     logger.info(
         "运行开始: 模式=%s workers=%s fast=%s",
         output_mode, workers, fast,
@@ -526,25 +525,6 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
     # Step 7: 生成报告
     phase = "生成报告"
     total_time = time.monotonic() - t_start
-    # 流量倍率：订阅服务器计费流量增量 ÷ 本次实测下载字节（不支持 header 的订阅静默跳过）
-    if mode != "streaming" and state._RUN_BYTES > 0 and state._SUB_INFO:
-        try:
-            usage_after = _fetch_sub_usage(urls)
-            for u in urls:
-                before = (state._SUB_INFO.get(u) or {}).get("download")
-                after = usage_after.get(u)
-                if before is not None and after is not None and after > before:
-                    state._RATE_INFO[u] = round((after - before) / state._RUN_BYTES, 2)
-        except Exception as e:
-            logger.debug("流量倍率统计失败: %s", _safe_exc_str(e))
-    if state._RATE_INFO:
-        avg_rate = round(sum(state._RATE_INFO.values()) / len(state._RATE_INFO), 2)
-        logger.info(
-            "流量倍率: %.2f（订阅服务器计费流量 ÷ 实测下载 %.1f MB）",
-            avg_rate, state._RUN_BYTES / 1024 / 1024,
-            extra=_ev("rate_done", {"avg_rate": avg_rate,
-                                    "per_url": {_mask_url(u): v for u, v in state._RATE_INFO.items()},
-                                    "run_bytes": state._RUN_BYTES}))
     _mark_reuse(list(results_dict.values()))  # 复用检测四档（依赖 IP 数据，无则空转）
     logger.info("=" * 50)
     logger.info("生成报告...")
