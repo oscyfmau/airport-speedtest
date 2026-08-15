@@ -21,7 +21,7 @@
 
 ## 快速上手（三步，不会命令行也能用）
 
-1. **下载**：打开 [Releases 页面](https://github.com/oscyfmau/airport-speedtest/releases)，下载最新版的 `airport-speedtest-v4.10.0.zip`（精简包，含运行所需的全部文件，解压即用）并解压（会用 git 也可以 `git clone`）
+1. **下载**：打开 [Releases 页面](https://github.com/oscyfmau/airport-speedtest/releases)，下载最新版的 `airport-speedtest-v4.10.0.zip`（精简包，含运行所需的全部文件）并解压，解压后先看里面的 `使用教程.txt`（会用 git 也可以 `git clone`）
 2. **填订阅**：把解压目录里的 `代理.txt.example` 复制一份，改名为 `代理.txt`，用记事本打开，粘贴你的订阅链接后保存
    - 什么是订阅链接？机场服务商提供的网址（一般以 `https://` 开头，内含全部节点信息），在机场官网或客户端 App 的「复制订阅」处获得
 3. **运行**：
@@ -301,8 +301,6 @@ mihomo 内核需要从 GitHub 下载（约 47MB），国内网络可能失败。
 ├── run.bat              # 启动脚本（唯一入口）
 ├── 代理.txt.example     # 订阅 URL 模板（复制为 代理.txt 使用）
 ├── 代理.txt             # 订阅 URL，每行一个（敏感，不入库）
-├── .github/
-│   └── ISSUE_TEMPLATE/  # Bug 报告与功能建议表单
 ├── core/
 │   ├── speed_test.py    # 入口与兼容重导出（v4.10 起逻辑按模块拆分）
 │   ├── config.py        # 常量（单一数据源）

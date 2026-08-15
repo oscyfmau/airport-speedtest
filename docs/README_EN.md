@@ -21,7 +21,7 @@ Version: v4.10.0 | Repository: [github.com/oscyfmau/airport-speedtest](https://g
 
 ## Quick Start (3 Steps, No Command Line Skills Needed)
 
-1. **Download**: open the [Releases page](https://github.com/oscyfmau/airport-speedtest/releases), download the latest `airport-speedtest-v4.10.0.zip` (a slim package with everything needed to run — unzip and go) and unzip it (if you know git you can also `git clone`)
+1. **Download**: open the [Releases page](https://github.com/oscyfmau/airport-speedtest/releases), download the latest `airport-speedtest-v4.10.0.zip` (a slim package with everything needed to run), unzip it, then read `使用教程.txt` inside first (if you know git you can also `git clone`)
 2. **Fill in the subscription**: in the unzipped folder, copy `代理.txt.example`, rename it to `代理.txt`, open it with Notepad, paste your subscription link and save
    - What is a subscription link? A URL provided by your airport service provider (usually starts with `https://` and contains all node info); get it from the "Copy subscription" option on the airport website or in the client app
 3. **Run**:
@@ -301,8 +301,6 @@ The mihomo core is downloaded from GitHub (~47MB) and may fail on some networks.
 ├── run.bat              # launch script (single entry point)
 ├── 代理.txt.example     # subscription URL template (copy to 代理.txt to use)
 ├── 代理.txt             # subscription URLs, one per line (sensitive, not committed)
-├── .github/
-│   └── ISSUE_TEMPLATE/  # bug report and feature request forms
 ├── core/
 │   ├── speed_test.py    # entry point + compatibility re-exports (modularized since v4.10)
 │   ├── config.py        # constants (single source of truth)
