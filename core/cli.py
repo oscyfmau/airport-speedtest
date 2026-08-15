@@ -106,6 +106,43 @@ def _append_subscribe_url(url: str) -> str:
         return f"失败: {_safe_exc_str(e)}"
 
 
+def _select_subscribe_urls(urls: list) -> list:
+    """多条订阅时让用户手动选择（逗号分隔多选，如 1,3；回车=全部）；单条直接返回
+
+    返回空列表表示用户取消（Ctrl+C），调用方应回菜单。
+    """
+    if len(urls) <= 1:
+        return urls
+    print(f"\n发现 {len(urls)} 条订阅：")
+    for i, u in enumerate(urls, 1):
+        print(f"  {i:>2}. {_mask_url(u)}")
+    try:
+        choice = input("选择要测的订阅（逗号分隔多选，如 1,3；回车=全部）: ").strip()
+    except KeyboardInterrupt:
+        return []
+    if not choice:
+        return urls
+    idxs = []
+    for part in choice.replace("，", ",").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            v = int(part)
+            if 1 <= v <= len(urls):
+                idxs.append(v)
+        except ValueError:
+            pass
+    if not idxs:
+        print("[错误] 选择无效，使用全部订阅")
+        return urls
+    sel = [urls[i - 1] for i in dict.fromkeys(idxs)]  # 去重保序
+    print(f"已选择 {len(sel)} 条订阅")
+    logger.info("订阅选择: %s", ", ".join(_mask_url(u) for u in sel),
+                extra=_ev("subscribe_select", {"urls": [_mask_url(u) for u in sel]}))
+    return sel
+
+
 def _current_settings_line() -> str:
     """设置摘要行（菜单 12 用）"""
     st = load_settings()
@@ -290,6 +327,10 @@ async def async_main():
                                                   {"url": _mask_url(manual), "saved": False}))
                 else:
                     continue
+            else:
+                urls = _select_subscribe_urls(urls)  # 多条订阅手动选择
+                if not urls:
+                    continue  # 用户取消 → 回菜单
             mode_map = {"1": "speed", "2": "normal", "3": "streaming_ai",
                         "4": "streaming_all", "8": "speed"}
             mode = mode_map.get(choice, "speed")
@@ -338,6 +379,9 @@ async def async_main():
                 print("[错误] 未找到 代理.txt")
                 input("\n按 Enter 返回菜单...")
                 continue
+            urls = _select_subscribe_urls(urls)  # 多条订阅手动选择
+            if not urls:
+                continue  # 用户取消 → 回菜单
             print("\n排序方式：")
             print("  1. 订阅顺序")
             print("  2. 最大速度 降序 ⬅ 默认")
@@ -628,4 +672,5 @@ def main():
         _cleanup_empty_log()
 
 __all__ = ['_MODE_NAMES', '_last_run_line', '_list_reports', '_append_subscribe_url',
-           '_current_settings_line', '_open_report', 'show_menu', 'async_main', 'main']
+           '_select_subscribe_urls', '_current_settings_line', '_open_report',
+           'show_menu', 'async_main', 'main']

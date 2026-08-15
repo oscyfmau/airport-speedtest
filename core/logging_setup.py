@@ -63,7 +63,8 @@ def setup_logging() -> str:
 
 
 # 交互事件：删除旧日志前迁移到新日志，避免菜单选择记录被轮换吞掉
-_INTERACT_EVENTS = {"menu_choice", "invalid_input", "manual_subscribe_input"}
+_INTERACT_EVENTS = {"menu_choice", "invalid_input", "manual_subscribe_input",
+                    "subscribe_select"}
 
 
 def _migrate_interact_lines(old_path: str, new_path: str) -> None:
