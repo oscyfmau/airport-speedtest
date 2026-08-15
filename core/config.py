@@ -3,7 +3,7 @@
 """配置与常量（单一数据源；v4.10 起为真定义模块）"""
 import os
 
-VERSION = "4.21.0"  # SemVer：主版本.次版本.修订号
+VERSION = "4.22.0"  # SemVer：主版本.次版本.修订号
 
 
 MIHOMO_REPO = "MetaCubeX/mihomo"
@@ -107,7 +107,7 @@ UDP_TYPES = {"hysteria", "hysteria2", "tuic", "juicity", "wireguard"}
 
 
 # 历史配色表（保留供外部引用；当前报告柱状图实际使用 report._bar_color：
-# 0→红、0.5MB/s→橙红、4MB/s→黄、16MB/s→黄绿、32MB/s+→深绿，见 CLAUDE.md 描述）
+# v4.22.0 起 7 档：0→深红、0.5→红、2→橙、6→黄、15→黄绿、30→绿、60MB/s+→深绿，见 CLAUDE.md 描述）
 SPEED_COLORS = [
     (0, (255, 255, 255)),        # 0       → 白色
     (64 * 1024, (102, 255, 102)),  # 64KB/s  → 浅绿

@@ -9,7 +9,7 @@
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Downloads](https://img.shields.io/github/downloads/oscyfmau/airport-speedtest/total?style=flat-square)](https://github.com/oscyfmau/airport-speedtest/releases)
 
-版本：v4.21.0 ｜ 仓库：[github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) ｜ [更新记录](CHANGELOG.md)
+版本：v4.22.0 ｜ 仓库：[github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) ｜ [更新记录](CHANGELOG.md)
 
 > 本项目由 AI 编写完成，因个人测速需求而开发，按需取用。
 
@@ -21,7 +21,7 @@
 
 ## 快速上手（三步，不会命令行也能用）
 
-1. **下载**：打开 [Releases 页面](https://github.com/oscyfmau/airport-speedtest/releases)，下载最新版的 `airport-speedtest-v4.21.0.zip`（精简包，含运行所需的全部文件）并解压，解压后先看里面的 `使用教程.txt`（会用 git 也可以 `git clone`）
+1. **下载**：打开 [Releases 页面](https://github.com/oscyfmau/airport-speedtest/releases)，下载最新版的 `airport-speedtest-v4.22.0.zip`（精简包，含运行所需的全部文件）并解压，解压后先看里面的 `使用教程.txt`（会用 git 也可以 `git clone`）
 2. **填订阅**：把解压目录里的 `代理.txt.example` 复制一份，改名为 `代理.txt`，用记事本打开，粘贴你的订阅链接后保存
    - 什么是订阅链接？机场服务商提供的网址（一般以 `https://` 开头，内含全部节点信息），在机场官网或客户端 App 的「复制订阅」处获得
 3. **运行**：
@@ -65,7 +65,7 @@ mihomo 内核无需手动下载，首次运行时自动下载到 `bin/`（约 47
 
 两种方式任选：
 
-- 不用 git：到 [Releases 页面](https://github.com/oscyfmau/airport-speedtest/releases) 下载最新版 `airport-speedtest-v4.21.0.zip`（精简包，仅含运行核心文件）并解压；需要自行改代码时再下载 `Source code (zip)`
+- 不用 git：到 [Releases 页面](https://github.com/oscyfmau/airport-speedtest/releases) 下载最新版 `airport-speedtest-v4.22.0.zip`（精简包，仅含运行核心文件）并解压；需要自行改代码时再下载 `Source code (zip)`
 - 用 git：
 
 ```bash
@@ -181,7 +181,7 @@ python core/speed_test.py https://你的订阅链接 --full   # 完整报告
 | `速度过低` | 前 3 秒累计下载不足 64KB，判定为过慢提前终止 |
 | `下载失败` | 8 秒窗口内下载总量不足 256KB（连接失败或拦截页） |
 | `--` | 无数据（节点未进入测速队列或全部下载源失败） |
-| 每秒速度柱状图 | 高度=该节点自身秒速的相对比例（看行内起伏）；颜色=绝对速度分级，越快越绿、越慢越红 |
+| 每秒速度柱状图 | 柱高=行内 min-max 归一化（每行必有起伏，最慢槽也有柱）；颜色=绝对速度 7 档：深红(很慢)→红→橙→黄→黄绿→绿→深绿(很快) |
 
 ### HTTP 状态码（流媒体列括号内的数字）
 
@@ -293,7 +293,7 @@ mihomo 内核需要从 GitHub 下载（约 47MB），国内网络可能失败。
 - 测速会消耗节点流量（每节点约 10-30MB），"勿跑大流量"节点请谨慎全量测试
 - 网页模拟测速会在标准/完整测试中为每个节点额外增加约 3-8 秒（4 站点并发、8 秒超时）；`--fast` 模式跳过
 - TCP 丢包率为 3 次握手的失败计数，对瞬时抖动敏感，仅作参考
-- 平台支持（v4.21.0）：Linux / macOS 未经实测——mihomo 内核自动下载已修复（Windows `.zip` / Linux/macOS `.gz` 格式，x86_64/arm64 架构，下载与解压路径已实测验证）；macOS 手动下载 mihomo 放入 `bin/` 会被 Gatekeeper 拦截（"无法验证开发者"），请用首次运行自动下载或菜单 `6 更新内核`；Linux 无图形界面时报告不会自动打开（`xdg-open` 不存在，不影响测试与手动查看 `output/`），无中文字体时 PNG 报告中文显示为方框（可安装 Noto Sans CJK）
+- 平台支持（v4.22.0）：Linux / macOS 未经实测——mihomo 内核自动下载已修复（Windows `.zip` / Linux/macOS `.gz` 格式，x86_64/arm64 架构，下载与解压路径已实测验证）；macOS 手动下载 mihomo 放入 `bin/` 会被 Gatekeeper 拦截（"无法验证开发者"），请用首次运行自动下载或菜单 `6 更新内核`；Linux 无图形界面时报告不会自动打开（`xdg-open` 不存在，不影响测试与手动查看 `output/`），无中文字体时 PNG 报告中文显示为方框（可安装 Noto Sans CJK）
 
 ### 隐私说明
 

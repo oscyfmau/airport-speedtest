@@ -27,14 +27,19 @@ def _get_speed_color(s: Optional[float]):
 
 
 def _bar_color(sp: float) -> tuple:
-    """柱状图配色（按绝对速度）：越快越绿、越慢越红，阈值间线性插值"""
+    """柱状图配色（绝对速度分级，v4.22.0）：越慢越红、越快越绿，阈值间线性插值
+
+    7 档：0→深红、0.5→红、2→橙、6→黄、15→黄绿、30→绿、60MB/s+→深绿
+    """
     b = sp * 1024 * 1024
     ramp = [
-        (0.0, (221, 51, 51)),                     # 0        → 红
-        (0.5 * 1024 * 1024, (221, 102, 51)),      # 0.5MB/s  → 橙红
-        (4 * 1024 * 1024, (221, 187, 0)),         # 4MB/s    → 黄
-        (16 * 1024 * 1024, (119, 170, 34)),       # 16MB/s   → 黄绿
-        (32 * 1024 * 1024, (34, 170, 34)),        # 32MB/s+  → 深绿
+        (0.0, (178, 34, 34)),                     # 0        → 深红（几乎无速度）
+        (0.5 * 1024 * 1024, (221, 51, 51)),       # 0.5MB/s  → 红（很慢）
+        (2 * 1024 * 1024, (221, 102, 51)),        # 2MB/s    → 橙（慢）
+        (6 * 1024 * 1024, (221, 187, 0)),         # 6MB/s    → 黄（一般）
+        (15 * 1024 * 1024, (154, 180, 34)),       # 15MB/s   → 黄绿（较快）
+        (30 * 1024 * 1024, (51, 170, 51)),        # 30MB/s   → 绿（快）
+        (60 * 1024 * 1024, (0, 128, 0)),          # 60MB/s+  → 深绿（很快）
     ]
     if b <= ramp[0][0]:
         return ramp[0][1]
@@ -375,18 +380,25 @@ def generate_report_image(results, mode, total_time, sort_by="default", display_
                 speeds = r.speed_per_sec
                 if speeds:
                     n = len(speeds)
-                    row_mx = max(speeds) if any(speeds) else 1.0
+                    row_mx = max(speeds)
+                    row_min = min(speeds)
+                    span = row_mx - row_min
                     bar_w = max(4, (w - 6) // n - 1)
                     bars = []
                     for i, sp in enumerate(speeds):
-                        # 行内相对高度：满高 = 该行自身最大秒速，行内起伏始终可见
-                        bh = max(3, int((rh - 6) * sp / row_mx))
+                        # v4.22.0：柱高 = 行内 min-max 归一化（最慢槽 3px、最快槽满高，
+                        # 每行必有起伏；速度绝对值由颜色表达，柱子只管起伏形状）
+                        if span > 0:
+                            ratio = (sp - row_min) / span
+                            bh = 3 + int((rh - 6 - 3) * ratio)   # 3px → 20px
+                        else:
+                            bh = rh - 6                            # 行内全相等（边缘情况）：满高
                         bx = x + 3 + int(i * (bar_w + 1))
                         bars.append((bx, bar_w, bh, sp))
                     # 第一遍：先把柱子立起来（浅灰底）
                     for bx, bw, bh, _ in bars:
                         dr.rectangle([(bx, y+rh-4-bh), (bx+bw, y+rh-4)], fill=(200, 200, 200))
-                    # 第二遍：按绝对速度上色（越快越绿、越慢越红）
+                    # 第二遍：按绝对速度上色（红=慢、绿=快，7 档分级）
                     for bx, bw, bh, sp in bars:
                         dr.rectangle([(bx, y+rh-4-bh), (bx+bw, y+rh-4)], fill=_bar_color(sp))
                         dr.rectangle([(bx, y+rh-4-bh), (bx+bw, y+rh-4)], outline="#666", width=1)
