@@ -3,7 +3,7 @@
 """配置与常量（单一数据源；v4.10 起为真定义模块）"""
 import os
 
-VERSION = "4.10.0"  # SemVer：主版本.次版本.修订号
+VERSION = "4.10.1"  # SemVer：主版本.次版本.修订号
 
 
 MIHOMO_REPO = "MetaCubeX/mihomo"

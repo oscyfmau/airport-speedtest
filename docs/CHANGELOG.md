@@ -8,6 +8,24 @@
 
 ---
 
+## v4.10.1
+
+### 修复
+- **mihomo 内核下载在 Linux/macOS 完全不可用**：官方发布件 Windows 为 `.zip`、Linux/macOS 为**单文件 `.gz`（gzip）且无 zip**（v1.19.29 资产实测核对），`_download_mihomo` 候选名与解压逻辑硬编码 zip → Linux/macOS 永远下载失败；现按平台分支——Windows 保持 `.zip` + zip-slip 校验解压，Linux/macOS 候选 `mihomo-{plat}-{tag}.gz`/`-v1-`/`-go124-`，gzip 解压写 `mihomo`（无扩展名）+ chmod 755；已用模拟 Linux 环境实测：linux-amd64 下载→解压→ELF 魔数 7f454c46 正确（48.3MB）
+- **mihomo 内核下载架构硬编码**：`_download_mihomo` 原固定 `amd64`（windows/linux/darwin），ARM 设备（linux-arm64 / darwin-arm64 / windows-arm64）下载 x86_64 版无法执行，Apple Silicon 依赖 Rosetta 2（macOS 26 起弃用）；现按 `platform.machine()` 映射——`x86_64/AMD64/x64`→`amd64`、`arm64/aarch64`→`arm64`，不支持的架构返回空并记 WARNING（v1.19.29 资产实测含 linux-arm64 / darwin-arm64 / windows-arm64 的 plain 名）
+
+### 修改
+- 平台支持声明更新（README×2）：明确 **Windows 10+（x86_64/arm64）为唯一实测平台**；Linux 与 macOS 按跨平台编写、静态审查通过但**未经实测**（内核下载路径已实测验证）；已知降级行为文档化——macOS Gatekeeper 拦截手动放置的 mihomo（用自动下载/菜单 6）、Linux 无图形界面不自动打开报告（xdg-open 缺失，不影响测试与手动查看）、无中文字体时 PNG 中文显示方框（安装 Noto Sans CJK）
+- `_find_or_download` 失败提示由"手动把 mihomo.exe 放入 bin/"改为通用表述（Linux/macOS 二进制无 .exe）
+
+### 新增
+- （无）
+
+### 移除
+- （无）
+
+---
+
 ## v4.10.0
 
 ### 修改

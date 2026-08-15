@@ -2,7 +2,9 @@
 # -*- coding: utf-8 -*-
 """mihomo 引擎：内核获取与更新 / 配置生成 / 进程管理 / 热重载 / 并行工作池 / TCP 直连检测"""
 import asyncio
+import gzip
 import os
+import platform
 import secrets
 import shutil
 import socket
@@ -197,7 +199,7 @@ class MihomoEngine:
         if binary:
             return binary
         logger.warning("mihomo 下载失败，部分功能不可用")
-        logger.warning("  修复方法：检查网络后重试；或手动把 mihomo.exe 放入 bin/ 目录；或运行菜单 6 更新内核")
+        logger.warning("  修复方法：检查网络后重试；或手动下载 mihomo 放入 bin/ 目录；或运行菜单 6 更新内核")
         return ""
 
     @staticmethod
@@ -237,27 +239,42 @@ class MihomoEngine:
             if not tag:
                 return ""
 
-            # 确定平台
+            # 确定平台与 CPU 架构（mihomo 官方发布件：windows/linux/darwin × amd64/arm64）
             system = sys.platform
+            machine = platform.machine().lower()
+            if machine in ("amd64", "x86_64", "x64"):
+                arch = "amd64"
+            elif machine in ("arm64", "aarch64"):
+                arch = "arm64"
+            else:
+                logger.warning(f"不支持的 CPU 架构: {machine}，跳过 mihomo 下载")
+                return ""
             if system == "win32":
-                plat = "windows-amd64"
+                plat = f"windows-{arch}"
                 ext = ".exe"
             elif system == "linux":
-                plat = "linux-amd64"
+                plat = f"linux-{arch}"
                 ext = ""
             elif system == "darwin":
-                plat = "darwin-amd64"
+                plat = f"darwin-{arch}"
                 ext = ""
             else:
                 return ""
 
-            # 可能的文件名模式（plain 名保留至今；追加 v1 变体防未来移除）
-            candidates = [
-                f"mihomo-{plat}-{tag}.zip",
-                f"mihomo-{plat}-v1-{tag}.zip",
-                f"mihomo-{plat}.zip",
-                f"mihomo-{plat}-alpha-{tag}.zip",
-            ]
+            # 候选文件名：Windows 官方发布 .zip；Linux/macOS 发布单文件 .gz（gzip，无 zip）
+            if ext == ".exe":
+                candidates = [
+                    f"mihomo-{plat}-{tag}.zip",
+                    f"mihomo-{plat}-v1-{tag}.zip",
+                    f"mihomo-{plat}.zip",
+                    f"mihomo-{plat}-alpha-{tag}.zip",
+                ]
+            else:
+                candidates = [
+                    f"mihomo-{plat}-{tag}.gz",
+                    f"mihomo-{plat}-v1-{tag}.gz",
+                    f"mihomo-{plat}-go124-{tag}.gz",
+                ]
 
             base_url = f"https://github.com/{MIHOMO_REPO}/releases/download/{tag}"
             zip_path = None
@@ -293,34 +310,49 @@ class MihomoEngine:
             if not zip_path or not os.path.exists(zip_path):
                 return ""
 
-            # 解压（校验 zip-slip：条目路径不得越出 target_dir）
-            base_real = os.path.realpath(target_dir)
-            try:
-                with zipfile.ZipFile(zip_path, "r") as zf:
-                    for name in zf.namelist():
-                        tgt = os.path.realpath(os.path.join(target_dir, name))
-                        if not (tgt == base_real or tgt.startswith(base_real + os.sep)):
-                            raise RuntimeError(f"非法压缩包路径: {name}")
-                    zf.extractall(target_dir)
-            except Exception as e:
-                logger.error(f"解压失败: {e}")
+            # 解压：Windows 为 zip（校验 zip-slip）；Linux/macOS 为单文件 gzip
+            if ext == ".exe":
+                base_real = os.path.realpath(target_dir)
+                try:
+                    with zipfile.ZipFile(zip_path, "r") as zf:
+                        for name in zf.namelist():
+                            tgt = os.path.realpath(os.path.join(target_dir, name))
+                            if not (tgt == base_real or tgt.startswith(base_real + os.sep)):
+                                raise RuntimeError(f"非法压缩包路径: {name}")
+                        zf.extractall(target_dir)
+                except Exception as e:
+                    logger.error(f"解压失败: {e}")
+                    os.remove(zip_path)
+                    return ""
                 os.remove(zip_path)
-                return ""
-            os.remove(zip_path)
 
-            # 找到解压后的二进制
-            for root, _, files in os.walk(target_dir):
-                for f in files:
-                    if "mihomo" in f.lower() and (f.endswith(".exe") or "." not in f):
-                        binary_path = os.path.join(root, f)
-                        dst = os.path.join(target_dir, f"mihomo{ext}")
-                        if binary_path != dst:
-                            shutil.move(binary_path, dst)
-                        if ext != ".exe":
-                            os.chmod(dst, 0o755)
-                        logger.info(f"mihomo 已就绪: {dst}")
-                        return dst
-            return ""
+                # 找到解压后的二进制
+                for root, _, files in os.walk(target_dir):
+                    for f in files:
+                        if "mihomo" in f.lower() and (f.endswith(".exe") or "." not in f):
+                            binary_path = os.path.join(root, f)
+                            dst = os.path.join(target_dir, f"mihomo{ext}")
+                            if binary_path != dst:
+                                shutil.move(binary_path, dst)
+                            logger.info(f"mihomo 已就绪: {dst}")
+                            return dst
+                return ""
+            else:
+                # gzip 单文件 → 解压为 mihomo（无扩展名），加执行权限
+                try:
+                    with gzip.open(zip_path, "rb") as gz:
+                        data = gz.read()
+                    dst = os.path.join(target_dir, "mihomo")
+                    with open(dst, "wb") as f:
+                        f.write(data)
+                    os.chmod(dst, 0o755)
+                except Exception as e:
+                    logger.error(f"解压失败: {e}")
+                    os.remove(zip_path)
+                    return ""
+                os.remove(zip_path)
+                logger.info(f"mihomo 已就绪: {dst}")
+                return dst
         except Exception as e:
             logger.error(f"mihomo 下载失败: {e}")
             return ""
