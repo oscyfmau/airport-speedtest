@@ -16,6 +16,7 @@
 - **测试结束汇总标签对齐**：`runner.py` 结尾的 可达/流媒体解锁节点/报告/数据/日志 五行的标签统一 `_pad_right(label, 14)`，冒号与值列对齐
 - **菜单 10 结果管理列表对齐**：模式列（简单测速/标准测试/全部流媒体等）`_pad_right(mode, 10)` 固定显示宽，报告文件名列对齐
 - **菜单 13 环境信息对齐**：全部标签（工具版本/Python/依赖/cloudscraper/mihomo/订阅/报告文件/日志文件/当前设置）统一 `_pad_right(label, 16)`；"报告/日志" 计数行改名 "报告文件/日志文件" 并入标签列；"当前设置" 行由复用 `_current_settings_line()` 改为内联对齐格式
+- **README×2 下载指引 zip 文件名随版本同步**：`airport-speedtest-v4.10.1.zip` → `airport-speedtest-v4.18.0.zip`（v4.18.0 发布配套，4 处：README/README_EN 的下载步骤与免 git 说明）
 
 ### 新增
 - （无）

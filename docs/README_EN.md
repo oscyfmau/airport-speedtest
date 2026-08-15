@@ -21,7 +21,7 @@ Version: v4.18.0 | Repository: [github.com/oscyfmau/airport-speedtest](https://g
 
 ## Quick Start (3 Steps, No Command Line Skills Needed)
 
-1. **Download**: open the [Releases page](https://github.com/oscyfmau/airport-speedtest/releases), download the latest `airport-speedtest-v4.10.1.zip` (a slim package with everything needed to run), unzip it, then read `使用教程.txt` inside first (if you know git you can also `git clone`)
+1. **Download**: open the [Releases page](https://github.com/oscyfmau/airport-speedtest/releases), download the latest `airport-speedtest-v4.18.0.zip` (a slim package with everything needed to run), unzip it, then read `使用教程.txt` inside first (if you know git you can also `git clone`)
 2. **Fill in the subscription**: in the unzipped folder, copy `代理.txt.example`, rename it to `代理.txt`, open it with Notepad, paste your subscription link and save
    - What is a subscription link? A URL provided by your airport service provider (usually starts with `https://` and contains all node info); get it from the "Copy subscription" option on the airport website or in the client app
 3. **Run**:
@@ -66,7 +66,7 @@ The mihomo core downloads automatically on first run to `bin/` (about 47MB) — 
 
 Either of the two ways:
 
-- No git: go to the [Releases page](https://github.com/oscyfmau/airport-speedtest/releases), download the latest `airport-speedtest-v4.10.1.zip` (slim package, run core files only) and unzip it; download `Source code (zip)` instead only if you want to modify the code
+- No git: go to the [Releases page](https://github.com/oscyfmau/airport-speedtest/releases), download the latest `airport-speedtest-v4.18.0.zip` (slim package, run core files only) and unzip it; download `Source code (zip)` instead only if you want to modify the code
 - With git:
 
 ```bash
