@@ -8,7 +8,65 @@
 
 ---
 
-## v4.9.0
+## v4.10.0
+
+### 修改
+- **代码模块化拆分**（维护性重构，行为不变）：`core/speed_test.py` 4137 行单文件拆为 16 个模块——`config.py`（常量）/`models.py`（数据类）/`utils.py`（遮蔽与工具）/`logging_setup.py`（日志）/`procs.py`（子进程）/`state.py`（运行时全局）/`parser.py`（解析器）/`engine.py`（引擎+TCP 检测）/`tester.py`（测速）/`streaming.py`（流媒体）/`ip_quality.py`（IP 质量）/`webpage.py`（网页模拟）/`report.py`（报告）/`runner.py`（编排）/`cli.py`（入口）/`image.py`（兼容重导出）；`speed_test.py` 收口为入口 + 兼容重导出（`__all__` 109 个旧公开符号，`from core.speed_test import X` 与 `from core import X` 路径全部保留）；依赖方向自底向上无环，可变全局统一经 `core.state` 访问（`reset_run_state()`）
+- **mihomo 外部控制器认证**：`_build_config_dict` 增加 `secret` 字段（每实例 `secrets.token_hex(16)`），引擎与 worker 全部 API 请求（/version、/proxies/Auto、/configs）携带 `Authorization: Bearer` 头
+- **URL 遮蔽扩充**：`_SENSITIVE_PARAMS` 新增 sid/user/username/pass/access_token/refresh_token/token_type/api_key/apikey/secret_key/private_key/client_secret/session/sessionid/cookie；`_mask_url` 支持权威段 basic-auth 遮蔽（`https://user:pass@host` → `https://user:***@host`）
+- **菜单6 内核更新改为原子替换**：旧目录 `rename` 为 `MIHOMO_DIR.bak` → `move` 新内核 → 成功删除备份/失败回滚旧目录
+- **`_download_mihomo` 资源管理**：非 200 响应显式 `close()`；下载中途异常删除半截压缩包
+- **`_mark_reuse` 入口 key**：由 `node.server` 改为 `f"{server}:{port}"`（同主机不同端口不再误判同入口）；空 server 不参与计数
+- **`check_generic` 403 判定收紧**：Cloudflare 特征（cf-chl/cf-challenge/challenges.cloudflare/cf-browser-verification/Attention Required/Just a moment）一律判"封锁"，仅正常业务页面结构判"可用"；删除不可达的 `aiohttp.ClientResponseError` 分支
+- **`check_disney` 区域校验**：最终 URL 含 not-available/unavailable 或页面含区域文案时判"失败(区域不可用)"，不再仅凭 200 判解锁
+- **`check_bilibili_tw` 错误码判定**：`code == -10403` 直接判"失败(区域限制)"（message 匹配降为兜底）
+- **`check_ip_quality` 429 退避**：每源最多重试 2 次（间隔 1.0s + attempt），不再 429 即降级到无风控字段的回退源
+- **`parse_vmess`**：tls 判定改白名单式（`"tls"/"true"/"1"` 为真；`"none"/""/"0"/"false"` 不再误判开启）；network 分支补 `quic`/`h2`
+- **`parse_anytls`**：insecure/allowInsecure 判定改白名单式（`"true"/"1"/"yes"`；`insecure=0`/空值不再置 `skip-cert-verify: true`）
+- **`parse_ssr`**：新增 `remarks` 参数（base64 节点名）解码，优先于服务器地址作节点名
+- **`_is_valid_node`**：wireguard 增加 private-key 存在性校验（缺 private-key 一并过滤）
+- **`_try_fetch`**：订阅响应改流式读取 + 20MB 体积上限（`_read_limited`），读取后 `resp.close()`；解析阶段流量头捕获经 `state._SUB_INFO`（修复静默失效）
+- **`_dedupe_nodes`**：新增节点名清洗（去控制符/换行、限长 100）
+- **`_find_free_port`**：新增 `exclude` 参数，mixed/api 端口互不相同
+- **`export_results_json`**：`json.dump` 增加 `allow_nan=False`
+- **`_fmt_ss`**：增加类型守卫（非字符串返回 `--`，不再抛 TypeError 拖垮报告）
+- **`run_end` 事件 schema 统一**：固定键 `completed/reason/partial/nodes`（正常完成含 total_seconds/mode/report）
+- **`new_run_log` 交互事件迁移**：删除旧日志前将 `menu_choice`/`invalid_input`/`manual_subscribe_input` 事件行迁移到新日志（不再被轮换吞掉）
+- **油管源解析不阻塞事件循环**：`resolve_youtube_download_url` 调用改 `asyncio.to_thread`
+- **`run.bat`**：增加 Python >= 3.9 版本断言（失败输出明确提示）
+- **订阅文件读取**：`read_subscribe_urls` 与 `-i` 改 `utf-8-sig`（兼容 UTF-8 BOM），GBK 解码失败时回退
+- **报告页脚时区**：硬编码 `(CST)` 改为本地时区名（`time.strftime("%Z")`）
+- **报告类型列**：`type[:7]` 截断改为缩写映射（hysteria2→hy2、wireguard→wg）
+- **`_open_report` 跨平台**：Windows `os.startfile`、macOS `open`、Linux `xdg-open`
+- **`_str_width`**：改用 `unicodedata.east_asian_width` 判宽（é/ü 等窄字符计宽 1）
+- **子进程登记回收**：新增 `_untrack_proc`（正常回收后注销，防列表无限增长）；`_cleanup_procs` 对已退出进程补 `wait`
+- **`_font` 回退链扩充**：新增 Noto CJK 多路径/SimSun/PingFang/STHeiti；无任何 CJK 字体时 WARNING 提示（不再静默出方框）
+- **异常日志统一遮蔽**：YAML 解析/yt-dlp/IP 源/节点流水线/测速连接/流量倍率/JSON 导出异常及 `JsonlFileHandler` exc 字段、excepthook traceback 全部过 `_safe_exc_str`
+
+### 修复
+- **vmess 节点误判不可达**：v2rayN 禁用 TLS 写 `"tls":"none"` 被真值判断误判为开启 TLS（mihomo 对纯 TCP 发起 TLS 握手失败）
+- **菜单6 更新损坏旧内核**：`shutil.rmtree` 先删后移，move 失败即丢失旧内核且无回滚
+- **订阅 URL 凭据泄露面**：basic-auth 与 sid/user/access_token 等参数未遮蔽，可进日志（ISSUE_TEMPLATE 引导外发日志）
+- **mihomo API 无认证**：external-controller 无 secret，本机进程/DNS 重绑定可读取节点凭据与篡改出口
+- **YAML 解析异常日志泄露**：`%e` 裸写异常（PyYAML 错误消息可能带凭据上下文），改 `_safe_exc_str(e)`
+- **SSR 节点名缺失**：`remarks` 参数未解码，节点名显示为服务器地址
+- **复用检测误判**：同主机不同端口节点被标"中转复用/完全复用"
+- **IP 源 429 静默降级**：主源瞬时限流直接换到无风控字段回退源，风险列变 `--`
+- **bilibili_tw 区域限制误分类**：未按错误码 -10403 判定，message 措辞变化时标为普通"失败"
+- **check_generic 误报解锁**：Cloudflare 拦截页含 `<!DOCTYPE` 被判"可用"
+- **订阅响应无体积上限**：恶意端点可耗尽内存
+- **菜单交互事件丢失**：`menu_choice` 等事件写入的日志被 `new_run_log` 轮换删除
+- **UTF-8 BOM 首行解析失败**：`代理.txt`/`-i` 文件带 BOM 时首行 URL 带 `\ufeff`
+- **`_fmt_ss` 崩溃**：streaming 值为 None 时 TypeError 致 PNG 报告整体失败
+- **流量倍率静默失效**（模块化引入）：`_SUB_INFO` 在解析器模块中未定义，捕获被 except 吞掉；改为 `state._SUB_INFO`
+- **JSON 导出失败**（模块化引入）：report 模块缺 `import json`；另缺 `sys`（runner）/`tempfile`（logging_setup）/`time`（webpage）/`typing.Optional`（engine/parser/report）已补齐
+- **节点流水线全灭**（模块化引入）：runner 模块缺 `import aiohttp`，流媒体/IP/网页检测 33/33 报 `name 'aiohttp' is not defined`；已修复并全量回归验证
+
+### 移除
+- `check_generic` 不可达的 `aiohttp.ClientResponseError` 分支
+- `generate_report_image` 中未使用的 `has_http` 变量
+- 报告页脚硬编码 `(CST)` 时区标注
+
 
 ### 新增
 - **TCP Ping 丢包率**：`tcp_ping_retry` 重试 2→3 次，返回 (最小延迟, 成功次数)；报告延迟列显示 `312ms(1丢)`（有丢失时），JSON 新增 `tcp_loss` 字段（UDP 节点为 null）

@@ -9,7 +9,7 @@
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Downloads](https://img.shields.io/github/downloads/oscyfmau/airport-speedtest/total?style=flat-square)](https://github.com/oscyfmau/airport-speedtest/releases)
 
-版本：v4.9.0 ｜ 仓库：[github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) ｜ [更新记录](CHANGELOG.md)
+版本：v4.10.0 ｜ 仓库：[github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) ｜ [更新记录](CHANGELOG.md)
 
 > 本项目由 AI 编写完成，因个人测速需求而开发，按需取用。
 
@@ -83,9 +83,12 @@ pip install -r core/requirements.txt
 | `python core/speed_test.py <URL> --full` | 完整测速（+ 流媒体解锁 + IP 质量 + 网页模拟） |
 | `python core/speed_test.py <URL> --fast` | 快速模式（5 秒测速窗口 / 跳过 IP 检测） |
 | `python core/speed_test.py <URL> --workers N` | 流媒体/IP/网页并行数（1-8，默认 4；测速恒串行） |
+| `python core/speed_test.py -i file.txt` | 从文件读取多个订阅 URL（每行一个） |
 | `python core/speed_test.py --report` | 打开上次报告 |
 | `python core/speed_test.py --menu` | 强制显示菜单 |
 | `python core/speed_test.py -h` | 查看帮助 |
+
+> 提示：`--full` 与 `--fast` 组合时，快速模式优先——测速窗口 5 秒且跳过 IP 质量与网页模拟（流媒体检测仍执行）。
 
 ```bash
 python core/speed_test.py https://你的订阅链接 --fast   # 5 分钟快速摸底
@@ -278,6 +281,12 @@ mihomo 内核需要从 GitHub 下载（约 47MB），国内网络可能失败。
 - 网页模拟测速会在标准/完整测试中为每个节点额外增加约 3-8 秒（4 站点并发、8 秒超时）；`--fast` 模式跳过
 - TCP 丢包率为 3 次握手的失败计数，对瞬时抖动敏感，仅作参考
 
+### 隐私说明
+
+- IP 质量检测经节点隧道发起，发送给 ipapi.is / ipwho.is / api.ip.sb 的是**节点出口 IP**，不是你的真实 IP；你的真实 IP 仅暴露给订阅服务器、GitHub（内核下载）与可选开启的油管直连解析（Google）
+- 日志（`log/`）中订阅 URL 的 token/password 等参数会被自动遮蔽；节点密码/UUID 不会写入日志与报告
+- 工具无任何遥测或统计上报
+
 ## 更新记录与致谢
 
 - 版本变更见 [CHANGELOG](CHANGELOG.md)（按 新增/修改/修复/移除 四栏记录，只陈述事实）
@@ -295,13 +304,23 @@ mihomo 内核需要从 GitHub 下载（约 47MB），国内网络可能失败。
 ├── .github/
 │   └── ISSUE_TEMPLATE/  # Bug 报告与功能建议表单
 ├── core/
-│   ├── speed_test.py    # 全部核心逻辑（单一数据源）
-│   ├── config.py        # 常量重导出
-│   ├── models.py        # 数据类重导出
-│   ├── parser.py        # 解析器重导出
-│   ├── engine.py        # 引擎重导出
-│   ├── tester.py        # 测试器重导出
-│   ├── image.py         # 图片生成重导出
+│   ├── speed_test.py    # 入口与兼容重导出（v4.10 起逻辑按模块拆分）
+│   ├── config.py        # 常量（单一数据源）
+│   ├── models.py        # 数据类
+│   ├── utils.py         # 通用工具（URL 遮蔽/编码/SSL）
+│   ├── logging_setup.py # 日志系统（控制台 + JSONL）
+│   ├── procs.py         # mihomo 子进程管理
+│   ├── state.py         # 运行时可变全局状态
+│   ├── parser.py        # 订阅解析器
+│   ├── engine.py        # mihomo 引擎 + TCP 检测
+│   ├── tester.py        # HTTP 测速执行器
+│   ├── streaming.py     # 流媒体解锁检测
+│   ├── ip_quality.py    # IP 质量检测
+│   ├── webpage.py       # 网页模拟测速
+│   ├── report.py        # PNG 报告 / JSON 导出
+│   ├── runner.py        # 测试流程编排
+│   ├── cli.py           # 命令行入口与菜单
+│   ├── image.py         # 兼容重导出（逻辑在 report.py）
 │   └── requirements.txt # Python 依赖
 ├── bin/                 # mihomo 内核（自动下载，不入库）
 ├── output/              # PNG 报告 + JSON 数据（不入库）

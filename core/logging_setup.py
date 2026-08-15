@@ -1,0 +1,217 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""日志系统：控制台文本 + 文件 JSONL 双输出、异常钩子、日志轮换"""
+import json
+import logging
+import os
+import sys
+import tempfile
+import time
+import traceback
+from datetime import datetime
+
+from .config import *
+from .utils import *
+
+logger = logging.getLogger("speed_test")
+
+
+_LOG_FILE = ""
+
+
+_LOG_HANDLER = None
+
+
+def _cleanup_stale_configs():
+    """清理历史运行（异常退出）残留的临时配置文件（只删超过 6 小时的，避免误删并发实例配置）"""
+    try:
+        tmp = tempfile.gettempdir()
+        now = time.time()
+        for f in os.listdir(tmp):
+            if (f.startswith("mihomo_") or f.startswith("mihomo_worker_")) and f.endswith(".yaml"):
+                try:
+                    p = os.path.join(tmp, f)
+                    if now - os.path.getmtime(p) > 6 * 3600:
+                        os.remove(p)
+                except OSError:
+                    pass
+    except Exception:
+        pass
+
+
+def setup_logging() -> str:
+    """初始化日志：控制台 INFO（文本）+ 文件 JSONL（log/测速日志_*.jsonl，每次运行新建、只保留最新一个），返回日志文件路径"""
+    global _LOG_FILE, _LOG_HANDLER
+    _cleanup_stale_configs()
+    logger.setLevel(logging.DEBUG)
+
+    if logger.handlers:  # 已初始化：移除旧 handler，避免重复输出
+        for h in list(logger.handlers):
+            logger.removeHandler(h)
+            try:
+                h.close()
+            except Exception:
+                pass
+
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.INFO)
+    ch.setFormatter(_ConsoleFormatter("%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S"))
+    logger.addHandler(ch)
+
+    _install_excepthook()
+    return new_run_log()
+
+
+# 交互事件：删除旧日志前迁移到新日志，避免菜单选择记录被轮换吞掉
+_INTERACT_EVENTS = {"menu_choice", "invalid_input", "manual_subscribe_input"}
+
+
+def _migrate_interact_lines(old_path: str, new_path: str) -> None:
+    """把旧日志中的交互事件行（菜单选择等）追加到新日志开头"""
+    try:
+        keep = []
+        with open(old_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    ev = json.loads(line).get("event", "")
+                except Exception:
+                    continue
+                if ev in _INTERACT_EVENTS:
+                    keep.append(line)
+        if keep:
+            with open(new_path, "a", encoding="utf-8") as f:
+                f.write("\n".join(keep) + "\n")
+    except Exception:
+        pass
+
+
+def new_run_log() -> str:
+    """每次测试运行开始时新建 JSONL 日志文件，并删除更早的日志文件（log/ 只保留最新一个）"""
+    global _LOG_FILE, _LOG_HANDLER
+    old_file = _LOG_FILE
+    if _LOG_HANDLER is not None:
+        logger.removeHandler(_LOG_HANDLER)
+        _LOG_HANDLER.close()
+    os.makedirs(LOG_DIR, exist_ok=True)
+    base = time.strftime("测速日志_%Y%m%d_%H%M%S")
+    path = os.path.join(LOG_DIR, base + ".jsonl")
+    if os.path.exists(path):  # 同一秒内多次运行：加后缀避免同名
+        path = os.path.join(LOG_DIR, base + f"_{int(time.monotonic() * 1000) % 1000:03d}.jsonl")
+    if old_file and os.path.exists(old_file):
+        _migrate_interact_lines(old_file, path)  # 先迁移交互事件
+    for f in sorted(os.listdir(LOG_DIR)):  # 清理旧日志：只保留最新一个
+        if f.startswith("测速日志_") and f.endswith(".jsonl") and os.path.join(LOG_DIR, f) != path:
+            try:
+                os.remove(os.path.join(LOG_DIR, f))
+            except OSError:
+                pass
+    _LOG_FILE = path
+    _LOG_HANDLER = JsonlFileHandler(path)
+    logger.addHandler(_LOG_HANDLER)
+    return _LOG_FILE
+
+
+class JsonlFileHandler(logging.Handler):
+    """JSONL 文件日志：每行一个 JSON 对象，逐条 flush（强杀/关窗口也不丢已写内容）"""
+
+    def __init__(self, path: str, level=logging.DEBUG):
+        super().__init__(level)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        self.path = path
+        self._fh = open(path, "a", encoding="utf-8")
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            entry = {
+                "ts": datetime.now().isoformat(timespec="milliseconds"),
+                "level": record.levelname,
+                "event": getattr(record, "event", "") or "",
+                "msg": record.getMessage(),
+            }
+            data = getattr(record, "data", None)
+            if data is not None:
+                entry["data"] = data
+            if record.exc_info and record.exc_info[0]:
+                entry["exc"] = _safe_exc_str(
+                    "".join(traceback.format_exception(*record.exc_info)).strip())
+            self._fh.write(json.dumps(entry, ensure_ascii=False, default=str) + "\n")
+            self._fh.flush()
+        except Exception as e:
+            # 写日志失败不能拖垮主流程；首次失败向 stderr 提示一次，避免静默丢失
+            if not getattr(self, "_warned", False):
+                self._warned = True
+                try:
+                    print(f"[日志写入失败] {self.path}: {e}", file=sys.stderr)
+                except Exception:
+                    pass
+
+    def close(self) -> None:
+        try:
+            self._fh.close()
+        except Exception:
+            pass
+        super().close()
+
+
+def _ev(event: str, data=None) -> dict:
+    """构造 logger extra：结构化事件名 + 数据（JSONL 文件日志用，控制台忽略）"""
+    return {"event": event, "data": data}
+
+
+def _pkg_version(name: str) -> str:
+    """读取已安装包版本（失败返回 ?）"""
+    try:
+        import importlib.metadata as _im
+        return _im.version(name)
+    except Exception:
+        return "?"
+
+
+def _cleanup_empty_log() -> None:
+    """进程退出时：当前日志文件为空（未跑测试，如 --help/--report/菜单退出）则删除"""
+    global _LOG_HANDLER, _LOG_FILE
+    if _LOG_HANDLER is not None:
+        try:
+            logger.removeHandler(_LOG_HANDLER)
+            _LOG_HANDLER.close()
+        except Exception:
+            pass
+        _LOG_HANDLER = None
+    try:
+        if _LOG_FILE and os.path.isfile(_LOG_FILE) and os.path.getsize(_LOG_FILE) == 0:
+            os.remove(_LOG_FILE)
+    except OSError:
+        pass
+
+
+def _install_excepthook() -> None:
+    """全局未捕获异常兜底：完整 traceback 写入 JSONL 日志（乱操作也不丢现场），并链式调用既有 hook"""
+    _old_hook = sys.excepthook
+
+    def _hook(tp, val, tb):
+        text = _safe_exc_str("".join(traceback.format_exception(tp, val, tb)).strip())
+        try:
+            logger.critical("未捕获异常: %s", text,
+                            extra=_ev("uncaught_exception", {"traceback": text}))
+        except Exception:
+            pass
+        try:
+            _old_hook(tp, val, tb)
+        except Exception:
+            pass
+    sys.excepthook = _hook
+
+
+class _ConsoleFormatter(logging.Formatter):
+    """仅控制台格式化器：整行套用 _flag_to_text（国旗 emoji 转 [XX]）。
+
+    文件日志用普通 Formatter，保留原始节点名。
+    """
+
+    def format(self, record):
+        return _flag_to_text(super().format(record))
+
+__all__ = ['logger', '_LOG_FILE', '_LOG_HANDLER', '_cleanup_stale_configs', 'setup_logging', 'new_run_log', 'JsonlFileHandler', '_ev', '_pkg_version', '_cleanup_empty_log', '_install_excepthook', '_ConsoleFormatter']

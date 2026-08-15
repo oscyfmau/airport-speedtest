@@ -6,16 +6,17 @@ set "DIR=%~dp0"
 cd /d "%DIR%"
 
 :: 检查 Python：只认 .exe（防止商店别名和 .cmd/.bat 垫片），python 不可用时回退 py -3
+:: 同时校验版本 >= 3.9（代码用了 list[...] 等新语法注解）
 set "PY="
 for /f "delims=" %%i in ('where python 2^>nul') do if /i "%%~xi"==".exe" set "PY=python"
 if defined PY (
-    python -c "import sys" >nul 2>&1
+    python -c "import sys; sys.exit(0 if sys.version_info >= (3,9) else 1)" >nul 2>&1
     if errorlevel 1 set "PY="
 )
 if not defined PY (
     for /f "delims=" %%i in ('where py 2^>nul') do if /i "%%~xi"==".exe" set "PY=py -3"
     if defined PY (
-        py -3 -c "import sys" >nul 2>&1
+        py -3 -c "import sys; sys.exit(0 if sys.version_info >= (3,9) else 1)" >nul 2>&1
         if errorlevel 1 set "PY="
     )
 )
@@ -40,6 +41,6 @@ if errorlevel 1 pause
 goto :eof
 
 :no_python
-echo [错误] 未找到可用的 Python，请安装 Python 3.9+ 并勾选 "Add python.exe to PATH"
+echo [错误] 未找到 Python 3.9+（或版本过低），请安装 Python 3.9+ 并勾选 "Add python.exe to PATH"
 pause
 exit /b 1

@@ -9,7 +9,7 @@ Pull all nodes from an airport subscription, test latency, speed, streaming unlo
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Downloads](https://img.shields.io/github/downloads/oscyfmau/airport-speedtest/total?style=flat-square)](https://github.com/oscyfmau/airport-speedtest/releases)
 
-Version: v4.9.0 | Repository: [github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) | [Changelog](CHANGELOG.md)
+Version: v4.10.0 | Repository: [github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) | [Changelog](CHANGELOG.md)
 
 > This project was written by AI and developed for personal needs — take it as-is.
 
@@ -83,9 +83,12 @@ Double-click `run.bat` for the interactive menu, or run directly from the comman
 | `python core/speed_test.py <URL> --full` | Full test (+ streaming unlock + IP quality + web page simulation) |
 | `python core/speed_test.py <URL> --fast` | Fast mode (5s speed window / skip IP check) |
 | `python core/speed_test.py <URL> --workers N` | Streaming/IP/webpage parallelism (1-8, default 4; speed tests always serial) |
+| `python core/speed_test.py -i file.txt` | Read multiple subscription URLs from a file (one per line) |
 | `python core/speed_test.py --report` | Open the last report |
 | `python core/speed_test.py --menu` | Force show the menu |
 | `python core/speed_test.py -h` | Show help |
+
+> Tip: with `--full` combined with `--fast`, fast mode wins — 5s speed window and IP quality + web page simulation are skipped (streaming checks still run).
 
 ```bash
 python core/speed_test.py https://your-subscription --fast   # quick scan in ~5 minutes
@@ -278,6 +281,12 @@ The mihomo core is downloaded from GitHub (~47MB) and may fail on some networks.
 - Web page simulation adds about 3-8 seconds per node in standard/full tests (4 sites concurrently, 8s timeout); skipped in `--fast` mode
 - TCP packet loss counts failures across 3 handshakes and is sensitive to transient jitter — reference only
 
+### Privacy
+
+- IP quality checks go through the node tunnel: the IP sent to ipapi.is / ipwho.is / api.ip.sb is the **node's exit IP**, not yours; your real IP is only exposed to the subscription server, GitHub (core download) and, if enabled, Google via direct YouTube link resolution
+- In logs (`log/`), sensitive URL params (token/password, etc.) are automatically masked; node passwords/UUIDs never appear in logs or reports
+- The tool has no telemetry or analytics
+
 ## Changelog & Credits
 
 - Version history in [CHANGELOG](CHANGELOG.md) (Added/Changed/Fixed/Removed columns, facts only)
@@ -295,13 +304,23 @@ The mihomo core is downloaded from GitHub (~47MB) and may fail on some networks.
 ├── .github/
 │   └── ISSUE_TEMPLATE/  # bug report and feature request forms
 ├── core/
-│   ├── speed_test.py    # all core logic (single source of truth)
-│   ├── config.py        # constants re-export
-│   ├── models.py        # dataclasses re-export
-│   ├── parser.py        # parser re-export
-│   ├── engine.py        # engine re-export
-│   ├── tester.py        # tester re-export
-│   ├── image.py         # image generation re-export
+│   ├── speed_test.py    # entry point + compatibility re-exports (modularized since v4.10)
+│   ├── config.py        # constants (single source of truth)
+│   ├── models.py        # dataclasses
+│   ├── utils.py         # helpers (URL masking / encoding / SSL)
+│   ├── logging_setup.py # logging (console + JSONL)
+│   ├── procs.py         # mihomo subprocess management
+│   ├── state.py         # runtime global state
+│   ├── parser.py        # subscription parser
+│   ├── engine.py        # mihomo engine + TCP detection
+│   ├── tester.py        # HTTP speed tester
+│   ├── streaming.py     # streaming unlock checks
+│   ├── ip_quality.py    # IP quality checks
+│   ├── webpage.py       # webpage simulation
+│   ├── report.py        # PNG report / JSON export
+│   ├── runner.py        # test pipeline orchestration
+│   ├── cli.py           # CLI entry & menu
+│   ├── image.py         # compatibility re-export (logic in report.py)
 │   └── requirements.txt # Python dependencies
 ├── bin/                 # mihomo core (auto-downloaded, not committed)
 ├── output/              # PNG reports + JSON data (not committed)
