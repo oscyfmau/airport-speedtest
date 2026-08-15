@@ -8,6 +8,25 @@
 
 ---
 
+## v4.19.0
+
+### 修复
+- **IP 质量主源失效导致类型/风险全显示 `--`**：ipapi.is（原主源）实测屏蔽多数机场出口 IP——经香港/日本/美国节点代理访问全部 `ClientConnectorError: Cannot connect to host api.ipapi.is:443`（直连本机 IP 正常），真实测试因此降级到无风控字段的 ipwho.is，报告"IP类型/IP风险"列显示 `--`；实测 ip-api.com 免费接口（`http://ip-api.com/json/`，fields 限定）经机场出口可用且带 `proxy`/`hosting`/`mobile` 三风控标志
+- **IP 类型判定只有机房/家宽两档**：`report._ctxt` 的 `ip_type` 列仅区分"商宽/机房 IP"与"家宽 IP"，代理/Tor/移动出口无法体现；现扩展五档——Tor 出口（is_tor）/ 代理-VPN IP（is_proxy 或 is_vpn）/ 商宽机房 IP（is_datacenter）/ 移动网络 IP（is_mobile）/ 家宽 IP；无风控数据判定改为核心三字段（is_datacenter/is_proxy/is_mobile）全 None → `--`（原仅查 is_datacenter，ip-api.com 源 is_tor/is_vpn 为 None 不影响）
+- **报告 IP 类型颜色**：Tor/代理/VPN 红 `#DD3333`、机房橙 `#DD8833`、家宽/移动绿 `#33AA55`（原仅机房橙/其余绿）
+
+### 修改
+- `ip_quality.py` 新增 `_ipapi_com_to_info` 映射器（`query`→ip、`countryCode`→country、`city`、`isp`、`as` 正则提取 ASN、`org`、`hosting`→is_datacenter、`proxy`→is_proxy、`mobile`→is_mobile，is_vpn/is_tor/is_abuser/is_crawler 置 None 不编造；风险分与共享级沿用启发式）
+- `IP_SOURCES` 顺序调整：ip-api.com（主源，http+fields 限定，限速 45 请求/分钟/出口 IP）→ api.ipapi.is（回退，风控字段最全但屏蔽多数机场出口）→ ipwho.is 加 `?security=1` 参数（实测免费版仍无 security 字段）→ api.ip.sb（最后回退）；429 退避重试与换源逻辑不变
+
+### 新增
+- （无）
+
+### 移除
+- （无）
+
+---
+
 ## v4.18.0
 
 ### 修改

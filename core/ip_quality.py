@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 """IP 质量检测：多源回退 / 风险评分 / 复用检测"""
 import asyncio
+import re
 
 import aiohttp
 from tqdm import tqdm
@@ -56,6 +57,37 @@ def _heuristic_share_level(info: dict) -> str:
     if info.get("is_mobile"):
         return "10-100"
     return "1-10"
+
+
+def _ipapi_com_to_info(data: dict) -> dict:
+    """ip-api.com 响应（fields 限定）→ 统一 IP 信息结构
+
+    v4.19.0 主源。免费版限 http + 45 请求/分钟/出口 IP，字段：
+    countryCode/city/isp/org/as/asname/proxy/hosting/mobile/query。
+    风控标志 proxy（公共代理）/hosting（机房托管）/mobile（移动网络）。
+    """
+    as_txt = data.get("as", "")
+    m = re.match(r"AS(\d+)", as_txt or "")
+    info = {
+        "ip": data.get("query", ""),
+        "country": data.get("countryCode", ""),
+        "city": data.get("city", ""),
+        "isp": data.get("isp", ""),
+        "asn": f"AS{m.group(1)}" if m else "",
+        "org": data.get("org", ""),
+        "is_datacenter": bool(data.get("hosting")),
+        "is_proxy": bool(data.get("proxy")),
+        "is_vpn": None,          # 该源无 VPN 标志，不编造
+        "is_tor": None,          # 该源无 Tor 标志，不编造
+        "is_abuser": None,
+        "is_mobile": bool(data.get("mobile")),
+        "is_crawler": None,
+        "source": "ip-api.com",
+    }
+    info["risk_score"] = _heuristic_risk_score(info)
+    info["share_level"] = _heuristic_share_level(info)
+    info["is_native"] = None
+    return info
 
 
 def _ipapi_to_info(data: dict) -> dict:
@@ -150,14 +182,22 @@ def _ipsb_to_info(data: dict) -> dict:
 
 
 IP_SOURCES = [
+    # v4.19.0 主源：ip-api.com 免费版经机场出口实测可用且带 proxy/hosting/mobile 标志
+    # （http 明文 + fields 限定；限速 45 请求/分钟/出口 IP，429 时现有逻辑退避重试后换源）
+    ("http://ip-api.com/json/?fields=status,message,country,countryCode,regionName,"
+     "city,isp,org,as,asname,proxy,hosting,mobile,query", _ipapi_com_to_info),
+    # 回退源：ipapi.is 风控字段最全（vpn/tor/abuser/crawler/datacenter），
+    # 但实测屏蔽多数机场出口 IP（ClientConnectorError），保留给未被屏蔽的出口
     ("https://api.ipapi.is", _ipapi_to_info),
-    ("https://ipwho.is/", _ipwho_to_info),
+    # 回退源：免费版无 security 字段（?security=1 参数实测无效），仅地理+ASN
+    ("https://ipwho.is/?security=1", _ipwho_to_info),
+    # 最后回退：仅地理+ASN，无风控字段
     ("https://api.ip.sb/geoip", _ipsb_to_info),
 ]
 
 
 async def check_ip_quality(session: aiohttp.ClientSession, proxy: str) -> dict:
-    """通过代理检测出口 IP 质量（多源回退：ipapi.is → ipwho.is → api.ip.sb）"""
+    """通过代理检测出口 IP 质量（多源回退：ip-api.com → ipapi.is → ipwho.is → api.ip.sb）"""
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     last_err = ""
     for url, mapper in IP_SOURCES:
@@ -285,4 +325,4 @@ def _mark_reuse(results: list[TestResult]) -> None:
         elif same_exit:
             r.ip_info["reuse"] = "落地复用"
 
-__all__ = ['_log_ip_details', '_heuristic_risk_score', '_heuristic_share_level', '_ipapi_to_info', '_ipwho_to_info', '_ipsb_to_info', 'IP_SOURCES', 'check_ip_quality', 'run_ip_quality_test', '_mark_reuse']
+__all__ = ['_log_ip_details', '_heuristic_risk_score', '_heuristic_share_level', '_ipapi_com_to_info', '_ipapi_to_info', '_ipwho_to_info', '_ipsb_to_info', 'IP_SOURCES', 'check_ip_quality', 'run_ip_quality_test', '_mark_reuse']

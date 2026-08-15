@@ -9,7 +9,7 @@
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Downloads](https://img.shields.io/github/downloads/oscyfmau/airport-speedtest/total?style=flat-square)](https://github.com/oscyfmau/airport-speedtest/releases)
 
-版本：v4.18.0 ｜ 仓库：[github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) ｜ [更新记录](CHANGELOG.md)
+版本：v4.19.0 ｜ 仓库：[github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) ｜ [更新记录](CHANGELOG.md)
 
 > 本项目由 AI 编写完成，因个人测速需求而开发，按需取用。
 
@@ -43,7 +43,7 @@ mihomo 内核无需手动下载，首次运行时自动下载到 `bin/`（约 47
 - TCP 延迟：本机直连握手 + mihomo 隧道双来源互验减少误判，3 次握手统计丢包率（延迟列显示 `312ms(1丢)`）
 - 测速：节点串行互不干扰、单节点 4 路连接 + 3 个下载源聚合（Cloudflare/CacheFly/OVH），8 秒窗口、剥离首秒慢启动
 - 流媒体解锁：33 个平台、10 个专用检测器（Netflix/Disney/YouTube/B站港澳台/TikTok/Steam 等），死节点提前跳过不浪费时间
-- IP 质量：类型（家宽/机房）+ ASN + 风险评分 0-100，ipapi.is 主源，ipwho.is / api.ip.sb 回退
+- IP 质量：类型（家宽/机房/代理/移动）+ ASN + 风险评分 0-100，ip-api.com 主源，ipapi.is / ipwho.is / api.ip.sb 回退
 - 复用检测四档：完全复用 / 中转复用 / 落地复用，一眼看穿机场共用线路（借鉴 SSRSpeedN）
 - 流量倍率：订阅计费流量增量 ÷ 实测下载字节，校验机场是否虚标流量
 - 网页模拟：并发加载 4 个代表性站点记首字节耗时，落地 CN 自动换国内站点（百度/哔哩哔哩/腾讯）
@@ -288,7 +288,7 @@ mihomo 内核需要从 GitHub 下载（约 47MB），国内网络可能失败。
 
 ## 已知限制
 
-- IP 质量检测依赖免费 API：ipapi.is 主源（提供机房/代理/VPN/Tor/滥用标志与 ASN，免费接口无移动网络标志，家宽含移动网络）；ipwho.is / api.ip.sb 为回退源（免费版仅地理与 ASN，无风控字段，类型/风险显示 `--`）；风险分为工具本地启发式评分（0-100，机房+20/代理+25/VPN+20/Tor+35/滥用+25/爬虫+10），非第三方风控分
+- IP 质量检测依赖免费 API：ip-api.com 主源（免费版限 http，提供机房 `hosting`/公共代理 `proxy`/移动网络 `mobile` 标志与 ASN/ISP，实测经机场出口可用；限速 45 请求/分钟/出口 IP）；ipapi.is 回退（提供机房/代理/VPN/Tor/滥用标志与 ASN，但实测屏蔽多数机场出口 IP）；ipwho.is / api.ip.sb 为最后回退（免费版仅地理与 ASN，无风控字段，类型/风险显示 `--`）；风险分为工具本地启发式评分（0-100，机房+20/代理+25/VPN+20/Tor+35/滥用+25/爬虫+10），非第三方风控分；IP 类型显示五档：Tor 出口 / 代理/VPN IP / 商宽机房 IP / 移动网络 IP / 家宽 IP
 - 本机无 IPv6 网络时，IPv6 节点必然测不通（工具已尽量探测标注，属环境限制）
 - 报告最多显示前 300 个节点
 - 油管下载源默认隐藏（`core/speed_test.py` 里 `YOUTUBE_SOURCE_ENABLED = False`）；如需启用第 4 个测速源（googlevideo 直链），改为 `True` 并安装 yt-dlp
@@ -296,11 +296,11 @@ mihomo 内核需要从 GitHub 下载（约 47MB），国内网络可能失败。
 - 流量倍率依赖订阅服务器在响应头返回 `subscription-userinfo`（主流机场面板均支持），且计费流量增量有更新延迟——倍率仅供参考
 - 网页模拟测速会在标准/完整测试中为每个节点额外增加约 3-8 秒（4 站点并发、8 秒超时）；`--fast` 模式跳过
 - TCP 丢包率为 3 次握手的失败计数，对瞬时抖动敏感，仅作参考
-- 平台支持（v4.18.0）：Linux / macOS 未经实测——mihomo 内核自动下载已修复（Windows `.zip` / Linux/macOS `.gz` 格式，x86_64/arm64 架构，下载与解压路径已实测验证）；macOS 手动下载 mihomo 放入 `bin/` 会被 Gatekeeper 拦截（"无法验证开发者"），请用首次运行自动下载或菜单 `6 更新内核`；Linux 无图形界面时报告不会自动打开（`xdg-open` 不存在，不影响测试与手动查看 `output/`），无中文字体时 PNG 报告中文显示为方框（可安装 Noto Sans CJK）
+- 平台支持（v4.19.0）：Linux / macOS 未经实测——mihomo 内核自动下载已修复（Windows `.zip` / Linux/macOS `.gz` 格式，x86_64/arm64 架构，下载与解压路径已实测验证）；macOS 手动下载 mihomo 放入 `bin/` 会被 Gatekeeper 拦截（"无法验证开发者"），请用首次运行自动下载或菜单 `6 更新内核`；Linux 无图形界面时报告不会自动打开（`xdg-open` 不存在，不影响测试与手动查看 `output/`），无中文字体时 PNG 报告中文显示为方框（可安装 Noto Sans CJK）
 
 ### 隐私说明
 
-- IP 质量检测经节点隧道发起，发送给 ipapi.is / ipwho.is / api.ip.sb 的是**节点出口 IP**，不是你的真实 IP；你的真实 IP 仅暴露给订阅服务器、GitHub（内核下载）与可选开启的油管直连解析（Google）
+- IP 质量检测经节点隧道发起，发送给 ip-api.com / ipapi.is / ipwho.is / api.ip.sb 的是**节点出口 IP**，不是你的真实 IP；你的真实 IP 仅暴露给订阅服务器、GitHub（内核下载）与可选开启的油管直连解析（Google）
 - 日志（`log/`）中订阅 URL 的 token/password 等参数会被自动遮蔽；节点密码/UUID 不会写入日志与报告
 - 工具无任何遥测或统计上报
 

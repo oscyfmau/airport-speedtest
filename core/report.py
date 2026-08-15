@@ -127,8 +127,13 @@ def _ctxt(cid, r):
     if cid=="ip_type":
         d=r.ip_info
         if d.get("error") or not d.get("ip"): return "--"
-        if d.get("is_datacenter") is None: return "--"  # 数据源无风控字段
+        # v4.19.0：核心风控字段（机房/代理/移动）全为 None → 数据源无风控数据
+        if (d.get("is_datacenter") is None and d.get("is_proxy") is None
+                and d.get("is_mobile") is None): return "--"
+        if d.get("is_tor"): return "Tor 出口"
+        if d.get("is_proxy") or d.get("is_vpn"): return "代理/VPN IP"
         if d.get("is_datacenter"): return "商宽/机房 IP"
+        if d.get("is_mobile"): return "移动网络 IP"
         return "家宽 IP"
     if cid=="ip_risk":
         d=r.ip_info
@@ -397,7 +402,13 @@ def generate_report_image(results, mode, total_time, sort_by="default", display_
                     fc = "#22AA22" if sc2<30 else "#DDBB00" if sc2<60 else "#DD3333"
             elif cid=="ip_type":
                 di = r.ip_info
-                fc = "#DD8833" if di.get("is_datacenter") else "#33AA55"
+                # v4.19.0：Tor/代理/VPN 红、机房橙、家宽/移动绿
+                if di.get("is_tor") or di.get("is_proxy") or di.get("is_vpn"):
+                    fc = "#DD3333"
+                elif di.get("is_datacenter"):
+                    fc = "#DD8833"
+                else:
+                    fc = "#33AA55"
             elif cid in r.streaming:
                 ds = _fmt_ss(txt); txt = ds
                 fc = "#22AA22" if "解锁" in ds or "可用" in ds else "#DD3333" if "失败" in ds or "封锁" in ds or ds=="N/A" else "#999"

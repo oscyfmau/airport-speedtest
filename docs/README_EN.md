@@ -9,7 +9,7 @@ Pull all nodes from an airport subscription, test latency, speed, streaming unlo
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Downloads](https://img.shields.io/github/downloads/oscyfmau/airport-speedtest/total?style=flat-square)](https://github.com/oscyfmau/airport-speedtest/releases)
 
-Version: v4.18.0 | Repository: [github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) | [Changelog](CHANGELOG.md)
+Version: v4.19.0 | Repository: [github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) | [Changelog](CHANGELOG.md)
 
 > This project was written by AI and developed for personal needs — take it as-is.
 
@@ -43,7 +43,7 @@ The mihomo core downloads automatically on first run to `bin/` (about 47MB) — 
 - TCP latency: local direct handshake + mihomo tunnel probe cross-check; packet loss counted across 3 handshakes (latency column shows `312ms(1lost)`)
 - Speed test: nodes tested serially without interference; 4 connections per node across 3 download sources (Cloudflare/CacheFly/OVH); 8s window, first-second slow start stripped
 - Streaming unlock: 33 platforms, 10 dedicated detectors (Netflix/Disney/YouTube/Bilibili TW-HK-MO/TikTok/Steam etc.); dead nodes skipped early
-- IP quality: type (residential/DC) + ASN + risk score 0-100; ipapi.is primary, ipwho.is / api.ip.sb fallback
+- IP quality: type (residential/DC/proxy/mobile) + ASN + risk score 0-100; ip-api.com primary, ipapi.is / ipwho.is / api.ip.sb fallback
 - Reuse detection in 4 tiers: full reuse / transit reuse / exit reuse — spot shared airport lines at a glance (inspired by SSRSpeedN)
 - Traffic multiplier: subscription metered-traffic delta ÷ actually downloaded bytes — verify whether the airport inflates traffic
 - Web page simulation: 4 representative sites loaded concurrently, first-byte latency recorded; CN exits auto-switch to domestic sites (Baidu/Bilibili/Tencent)
@@ -288,7 +288,7 @@ The mihomo core is downloaded from GitHub (~47MB) and may fail on some networks.
 
 ## Known Limitations
 
-- IP quality detection depends on free APIs: ipapi.is is the primary source (provides datacenter/proxy/VPN/Tor/abuser flags and ASN; the free API has no mobile-network flag, so residential includes mobile); ipwho.is / api.ip.sb are fallbacks (free tier provides only geo and ASN — no risk-control fields, type/risk shown as `--`); the risk score is a local heuristic (0-100: datacenter+20/proxy+25/VPN+20/Tor+35/abuser+25/crawler+10), not a third-party fraud score
+- IP quality detection depends on free APIs: ip-api.com is the primary source (free tier is HTTP-only, provides hosting/proxy/mobile flags plus ASN/ISP; verified reachable through airport exits; rate-limited to 45 requests/min per exit IP); ipapi.is is a fallback (provides datacenter/proxy/VPN/Tor/abuser flags plus ASN, but is observed to block most airport exit IPs); ipwho.is / api.ip.sb are the last fallbacks (free tier provides only geo and ASN — no risk-control fields, type/risk shown as `--`); the risk score is a local heuristic (0-100: datacenter+20/proxy+25/VPN+20/Tor+35/abuser+25/crawler+10), not a third-party fraud score; IP type shows five levels: Tor exit / proxy-VPN / datacenter / mobile network / residential
 - Without IPv6 on the local machine, IPv6 nodes will inevitably fail to test (the tool probes and marks them as much as possible; this is an environment limitation)
 - The report shows at most the first 300 nodes
 - The YouTube download source is hidden by default (`YOUTUBE_SOURCE_ENABLED = False` in `core/speed_test.py`); set it to `True` and install yt-dlp to enable the 4th speed-test source (googlevideo direct link)
@@ -296,11 +296,11 @@ The mihomo core is downloaded from GitHub (~47MB) and may fail on some networks.
 - Traffic multiplier requires the subscription server to return the `subscription-userinfo` header (most mainstream airport panels do) and metered traffic updates may lag — treat it as a reference only
 - Web page simulation adds about 3-8 seconds per node in standard/full tests (4 sites concurrently, 8s timeout); skipped in `--fast` mode
 - TCP packet loss counts failures across 3 handshakes and is sensitive to transient jitter — reference only
-- Platform support (v4.18.0): Linux / macOS are NOT actually tested — the mihomo core auto-download is now fixed (Windows `.zip` / Linux-macOS `.gz` formats, x86_64/arm64 architectures; the download & decompress path was verified in a simulated Linux environment); on macOS a manually downloaded mihomo placed into `bin/` is blocked by Gatekeeper ("unidentified developer") — use the first-run auto-download or menu option `6 Update core`; on headless Linux the report does not open automatically (`xdg-open` missing; the test itself and manual viewing of `output/` are unaffected), and without a CJK font the PNG report shows boxes for Chinese text (install Noto Sans CJK)
+- Platform support (v4.19.0): Linux / macOS are NOT actually tested — the mihomo core auto-download is now fixed (Windows `.zip` / Linux-macOS `.gz` formats, x86_64/arm64 architectures; the download & decompress path was verified in a simulated Linux environment); on macOS a manually downloaded mihomo placed into `bin/` is blocked by Gatekeeper ("unidentified developer") — use the first-run auto-download or menu option `6 Update core`; on headless Linux the report does not open automatically (`xdg-open` missing; the test itself and manual viewing of `output/` are unaffected), and without a CJK font the PNG report shows boxes for Chinese text (install Noto Sans CJK)
 
 ### Privacy
 
-- IP quality checks go through the node tunnel: the IP sent to ipapi.is / ipwho.is / api.ip.sb is the **node's exit IP**, not yours; your real IP is only exposed to the subscription server, GitHub (core download) and, if enabled, Google via direct YouTube link resolution
+- IP quality checks go through the node tunnel: the IP sent to ip-api.com / ipapi.is / ipwho.is / api.ip.sb is the **node's exit IP**, not yours; your real IP is only exposed to the subscription server, GitHub (core download) and, if enabled, Google via direct YouTube link resolution
 - In logs (`log/`), sensitive URL params (token/password, etc.) are automatically masked; node passwords/UUIDs never appear in logs or reports
 - The tool has no telemetry or analytics
 
