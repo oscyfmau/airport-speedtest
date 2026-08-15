@@ -8,6 +8,42 @@
 
 ---
 
+## v4.14.0
+
+### 修复
+- **Netflix 检测误报"错误(连接失败)"**：title 双剧探测（自制剧/非自制剧）异常（连接瞬断/响应头超限）时直接判错误，可达节点被误判；现 title 探测异常时回退首页可达性判定（200 即可用 + 区域从重定向 URL 提取，如 `/hk-en/`→HK、`/tw-en/`→TW），实测香港/台湾节点由"错误(连接失败)"修正为"可用(HK)/可用(TW)"
+- **Gemini 等 Google 系误报"错误(连接失败)"**：gemini.google.com 响应头超 aiohttp 默认 8190 字节限制抛 `Header value is too long`；流媒体/IP/网页检测的全部 `ClientSession` 增加 `max_field_size=65536, max_line_size=65536`，实测香港节点由"错误(连接失败)"修正为"可用"
+- **`check_generic` 403 误判风险**：原逻辑 403 页面含 `"<html"` 即判"可用"（Cloudflare/JS 挑战页几乎都含，挑战文案变体时会误判可用）；现按序判定——挑战特征（原 6 个 + 新增 verify you are human / checking your browser / enable javascript / cf-turnstile / challenge-platform / recaptcha / hcaptcha / turnstile）→ 封锁；页面 title 含平台名 → 可用；>15KB 且含前端框架特征（__NUXT/react-root/__NEXT_DATA__/id=root）→ 可用；其余 403 一律封锁
+- **`check_youtube` 误报"失败(无Premium标识)"**：premium 页返回 200 但无可识别特征（consent/登录墙等变体）时判失败；现 200 无特征 → "可用"，并跟进重定向（allow_redirects=True）
+
+### 修改
+- （无）
+
+### 新增
+- （无）
+
+### 移除
+- （无）
+
+---
+
+## v4.13.0
+
+### 修改
+- **流媒体服务表移除大陆 BiliBili（`bilibili` 条目）**：`STANDARD_STREAMING_SERVICES`、`SIMPLE_STREAMING_SERVICES`、`_COMMON_IDS` 删除该条目，保留 `bilibili_tw`（港澳台，专用检测器 `check_bilibili_tw` 不变）；FULL 34 → 33 个平台，COMMON（菜单2）9 → 8 个（youtube/netflix/disney/bilibili_tw/chatgpt/tiktok/primevideo/max），SIMPLE 4 → 3 个（youtube/netflix/disney）
+- `check_bilibili` 函数与 `STREAMING_CHECKERS["bilibili"]` 条目保留（接口不删，无服务引用即不执行）；README×2 平台数同步（菜单2 8 个常用流媒体、菜单4 33 个平台全测、10 个在用专用检测器）
+
+### 修复
+- （无）
+
+### 新增
+- （无）
+
+### 移除
+- （无）
+
+---
+
 ## v4.12.0
 
 ### 新增

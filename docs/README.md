@@ -9,7 +9,7 @@
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Downloads](https://img.shields.io/github/downloads/oscyfmau/airport-speedtest/total?style=flat-square)](https://github.com/oscyfmau/airport-speedtest/releases)
 
-版本：v4.12.0 ｜ 仓库：[github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) ｜ [更新记录](CHANGELOG.md)
+版本：v4.14.0 ｜ 仓库：[github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) ｜ [更新记录](CHANGELOG.md)
 
 > 本项目由 AI 编写完成，因个人测速需求而开发，按需取用。
 
@@ -42,7 +42,7 @@ mihomo 内核无需手动下载，首次运行时自动下载到 `bin/`（约 47
 - 协议解析：支持 vmess / vless / trojan / ss / ssr / hysteria2 / tuic / wireguard / anytls 等 20 种协议，多个订阅 URL 可合并去重
 - TCP 延迟：本机直连握手 + mihomo 隧道双来源互验减少误判，3 次握手统计丢包率（延迟列显示 `312ms(1丢)`）
 - 测速：节点串行互不干扰、单节点 4 路连接 + 3 个下载源聚合（Cloudflare/CacheFly/OVH），8 秒窗口、剥离首秒慢启动
-- 流媒体解锁：34 个平台、11 个专用检测器（Netflix/Disney/YouTube/B站港澳台/TikTok/Steam 等），死节点提前跳过不浪费时间
+- 流媒体解锁：33 个平台、10 个专用检测器（Netflix/Disney/YouTube/B站港澳台/TikTok/Steam 等），死节点提前跳过不浪费时间
 - IP 质量：类型（家宽/机房）+ ASN + 风险评分 0-100，ipapi.is 主源，ipwho.is / api.ip.sb 回退
 - 复用检测四档：完全复用 / 中转复用 / 落地复用，一眼看穿机场共用线路（借鉴 SSRSpeedN）
 - 流量倍率：订阅计费流量增量 ÷ 实测下载字节，校验机场是否虚标流量
@@ -105,9 +105,9 @@ python core/speed_test.py https://你的订阅链接 --full   # 完整报告
 | 选项 | 说明 |
 |---|---|
 | 1. 简单测速 | TCP 检测 + HTTP 测速（最快） |
-| 2. 标准测试 | 测速 + 9 个常用流媒体 + IP 质量 + 网页模拟 |
+| 2. 标准测试 | 测速 + 8 个常用流媒体 + IP 质量 + 网页模拟 |
 | 3. AI 流媒体 | 8 个 AI 平台检测 |
-| 4. 全部流媒体 | 34 个平台全测 |
+| 4. 全部流媒体 | 33 个平台全测 |
 | 5. 查看上次结果 | 打开 output 目录最新的 PNG 报告 |
 | 6. 更新内核 | 下载最新 mihomo 内核（显示当前/目标版本，先下载后替换） |
 | 7. 退出 | 退出程序 |
@@ -296,7 +296,7 @@ mihomo 内核需要从 GitHub 下载（约 47MB），国内网络可能失败。
 - 流量倍率依赖订阅服务器在响应头返回 `subscription-userinfo`（主流机场面板均支持），且计费流量增量有更新延迟——倍率仅供参考
 - 网页模拟测速会在标准/完整测试中为每个节点额外增加约 3-8 秒（4 站点并发、8 秒超时）；`--fast` 模式跳过
 - TCP 丢包率为 3 次握手的失败计数，对瞬时抖动敏感，仅作参考
-- 平台支持（v4.12.0）：Linux / macOS 未经实测——mihomo 内核自动下载已修复（Windows `.zip` / Linux/macOS `.gz` 格式，x86_64/arm64 架构，下载与解压路径已实测验证）；macOS 手动下载 mihomo 放入 `bin/` 会被 Gatekeeper 拦截（"无法验证开发者"），请用首次运行自动下载或菜单 `6 更新内核`；Linux 无图形界面时报告不会自动打开（`xdg-open` 不存在，不影响测试与手动查看 `output/`），无中文字体时 PNG 报告中文显示为方框（可安装 Noto Sans CJK）
+- 平台支持（v4.14.0）：Linux / macOS 未经实测——mihomo 内核自动下载已修复（Windows `.zip` / Linux/macOS `.gz` 格式，x86_64/arm64 架构，下载与解压路径已实测验证）；macOS 手动下载 mihomo 放入 `bin/` 会被 Gatekeeper 拦截（"无法验证开发者"），请用首次运行自动下载或菜单 `6 更新内核`；Linux 无图形界面时报告不会自动打开（`xdg-open` 不存在，不影响测试与手动查看 `output/`），无中文字体时 PNG 报告中文显示为方框（可安装 Noto Sans CJK）
 
 ### 隐私说明
 

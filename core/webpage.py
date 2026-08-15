@@ -66,7 +66,8 @@ async def run_webpage_test(mihomo: MihomoEngine, nodes: list[ProxyNode],
             await asyncio.sleep(0.5)  # 给切换和 DNS 留时间
             proxy = mihomo.get_proxy_url()
             async with aiohttp.ClientSession(
-                    connector=aiohttp.TCPConnector(ssl=ssl_ctx, force_close=True)) as session:
+                    connector=aiohttp.TCPConnector(ssl=ssl_ctx, force_close=True),
+                    max_field_size=65536, max_line_size=65536) as session:
                 ip_info = (results.get(node.name).ip_info
                            if node.name in results else {}) or {}
                 web = await check_one_node_webpage(session, proxy, ip_info, node.name)

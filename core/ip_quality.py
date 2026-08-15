@@ -227,7 +227,9 @@ async def run_ip_quality_test(mihomo: MihomoEngine, nodes: list[ProxyNode],
             await asyncio.sleep(0.5)  # 给切换和 DNS 留时间
             proxy = mihomo.get_proxy_url()
             # 每次创建新 session，确保走正确的出口
-            async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=ssl_ctx, force_close=True)) as session:
+            async with aiohttp.ClientSession(
+                    connector=aiohttp.TCPConnector(ssl=ssl_ctx, force_close=True),
+                    max_field_size=65536, max_line_size=65536) as session:
                 ip_info = await check_ip_quality(session, proxy)
                 if node.name in results:
                     results[node.name].ip_info = ip_info

@@ -3,7 +3,7 @@
 """配置与常量（单一数据源；v4.10 起为真定义模块）"""
 import os
 
-VERSION = "4.12.0"  # SemVer：主版本.次版本.修订号
+VERSION = "4.14.0"  # SemVer：主版本.次版本.修订号
 
 
 MIHOMO_REPO = "MetaCubeX/mihomo"
@@ -130,7 +130,6 @@ CORE_STREAMING_SERVICES = [
 
 STANDARD_STREAMING_SERVICES = CORE_STREAMING_SERVICES + [
     {"id": "abema",     "name": "AbemaTV",    "url": "https://abema.tv",                "type": "abema"},
-    {"id": "bilibili",  "name": "BiliBili",   "url": "https://www.bilibili.com",        "type": "bilibili"},
     {"id": "bilibili_tw", "name": "B站港澳台", "url": "https://www.bilibili.com",        "type": "bilibili_tw"},
     {"id": "dazn",      "name": "Dazn",       "url": "https://www.dazn.com",            "type": "dazn"},
     {"id": "hbomax",    "name": "HboMax",     "url": "https://www.hbomax.com",          "type": "hbomax"},
@@ -182,13 +181,12 @@ AI_STREAMING_SERVICES = [
 # 简单测速分组（当前菜单1 不跑流媒体，此列表保留供外部引用/未来接入，勿删接口）
 SIMPLE_STREAMING_SERVICES = [
     {"id": "youtube",   "name": "YouTube",    "url": "https://www.youtube.com",         "type": "youtube"},
-    {"id": "bilibili",  "name": "BiliBili",   "url": "https://www.bilibili.com",        "type": "bilibili"},
     {"id": "netflix",   "name": "Netflix",    "url": "https://www.netflix.com",         "type": "netflix"},
     {"id": "disney",    "name": "Disney+",    "url": "https://www.disneyplus.com",      "type": "disney"},
 ]
 
 
-_COMMON_IDS = ["youtube", "netflix", "disney", "bilibili", "bilibili_tw",
+_COMMON_IDS = ["youtube", "netflix", "disney", "bilibili_tw",
                "chatgpt", "tiktok", "primevideo", "max"]
 
 

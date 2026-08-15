@@ -92,7 +92,8 @@ async def _run_node_pipeline(pool: MihomoWorkerPool, node_tasks: list,
                 if do_stream:
                     await asyncio.sleep(0.3)
                     async with aiohttp.ClientSession(
-                            connector=aiohttp.TCPConnector(ssl=ssl_ctx, force_close=True)) as sess:
+                            connector=aiohttp.TCPConnector(ssl=ssl_ctx, force_close=True),
+                            max_field_size=65536, max_line_size=65536) as sess:
                         streaming = await check_one_node_streaming(sess, proxy, node, streaming_services)
                         if node.name in results_dict:
                             results_dict[node.name].streaming = streaming
@@ -128,7 +129,8 @@ async def _run_node_pipeline(pool: MihomoWorkerPool, node_tasks: list,
                 if do_web:
                     await asyncio.sleep(0.3)
                     async with aiohttp.ClientSession(
-                            connector=aiohttp.TCPConnector(ssl=ssl_ctx, force_close=True)) as sess:
+                            connector=aiohttp.TCPConnector(ssl=ssl_ctx, force_close=True),
+                            max_field_size=65536, max_line_size=65536) as sess:
                         ip_info = (results_dict.get(node.name).ip_info
                                    if node.name in results_dict else {}) or {}
                         web = await check_one_node_webpage(sess, proxy, ip_info, node.name)

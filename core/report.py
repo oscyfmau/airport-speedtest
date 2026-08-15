@@ -289,7 +289,7 @@ def generate_report_image(results, mode, total_time, sort_by="default", display_
             cols.append(("web_avg","网页均耗",84,"c"))
         if has_ip:
             cols += [("ip_type","IP类型",82,"c"),("ip_risk","IP风险",72,"c"),("reuse","复用",64,"c")]
-        # 渲染本次实际测过的全部流媒体列（COMMON 9 个或 FULL 34 个）
+        # 渲染本次实际测过的全部流媒体列（COMMON 8 个或 FULL 33 个）
         name_map = {s["id"]: s["name"] for s in FULL_STREAMING_SERVICES}
         for sid in [s["id"] for s in FULL_STREAMING_SERVICES if s["id"] in stream_ids]:
             cols.append((sid, name_map.get(sid, sid), 64, "c"))

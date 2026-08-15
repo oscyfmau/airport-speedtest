@@ -23,7 +23,9 @@ async def check_youtube(session: aiohttp.ClientSession, proxy: str) -> str:
         async with session.get(
             "https://www.youtube.com/premium", proxy=proxy, headers=headers,
             timeout=aiohttp.ClientTimeout(total=STREAMING_TEST_TIMEOUT),
+            allow_redirects=True,
         ) as resp:
+            status = resp.status
             text = await resp.text()
             # 送中检测
             if "www.google.cn" in text:
@@ -56,19 +58,27 @@ async def check_youtube(session: aiohttp.ClientSession, proxy: str) -> str:
             # 有地区代码但无 ad-free → 无 Premium 解锁但 YouTube 可访问
             if region:
                 return f"可用({region})"
+            # v4.14.0：200 但无任何可识别特征（consent/登录墙等变体）→ 至少可达
+            if status == 200:
+                return "可用"
             return "失败(无Premium标识)"
     except Exception as e:
         return f"错误({type(e).__name__})"
 
 
 async def check_netflix(session: aiohttp.ClientSession, proxy: str) -> str:
-    """检测 Netflix 解锁（参考 RegionRestrictionCheck）"""
+    """检测 Netflix 解锁（参考 RegionRestrictionCheck）
+
+    v4.14.0：title 探测异常（连接/解析错误，如响应头超 aiohttp 限制）不再直接判
+    "错误(连接失败)"——回退首页可达性判定（200 + 区域从重定向 URL 提取，如 /hk-en/）。
+    """
     try:
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
         async def _check(url: str) -> str:
             try:
                 async with session.get(url, proxy=proxy, headers=headers,
                     timeout=aiohttp.ClientTimeout(total=STREAMING_TEST_TIMEOUT),
+                    allow_redirects=True,
                 ) as r:
                     if r.status != 200:
                         return "blocked"
@@ -81,18 +91,33 @@ async def check_netflix(session: aiohttp.ClientSession, proxy: str) -> str:
                         region = m.group(1)
                     return f"ok:{region}" if region else "ok"
             except Exception:
-                return "错误(连接失败)"  # 连接类异常与业务封锁区分，供死节点预检判定
+                return "error"
 
         r1 = await _check("https://www.netflix.com/title/81280792")  # 自制剧
         r2 = await _check("https://www.netflix.com/title/70143836")  # 非自制剧
 
-        if r1.startswith("错误") or r2.startswith("错误"):
-            return "错误(连接失败)"
         if r1.startswith("ok") and r2.startswith("ok"):
             region = r1.split(":")[1] if ":" in r1 else r2.split(":")[1] if ":" in r2 else ""
             return f"解锁({region})" if region else "解锁"
         elif r1.startswith("ok") and not r2.startswith("ok"):
             return "仅自制剧"
+        elif "error" in (r1, r2):
+            # title 探测异常（响应头过大/连接瞬断等）→ 首页可达性兜底 + URL 区域
+            try:
+                async with session.get(
+                    "https://www.netflix.com/", proxy=proxy, headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=STREAMING_TEST_TIMEOUT),
+                    allow_redirects=True,
+                ) as r:
+                    if r.status == 200:
+                        region = ""
+                        m = re.search(r"/[a-z]{2}-en/?", str(r.url))
+                        if m:
+                            region = m.group(0).strip("/").split("-")[0].upper()
+                        return f"可用({region})" if region else "可用"
+                    return "错误(连接失败)"
+            except Exception:
+                return "错误(连接失败)"
         else:
             return "失败"
     except Exception as e:
@@ -175,7 +200,13 @@ async def check_chatgpt(session: aiohttp.ClientSession, proxy: str) -> str:
 
 
 async def check_generic(session: aiohttp.ClientSession, proxy: str, url: str, name: str) -> str:
-    """通用检测（跟进重定向，允许 3xx 也算可用）"""
+    """通用检测（跟进重定向，允许 3xx 也算可用）
+
+    403 判定（v4.14.0 收紧）：先查挑战页特征（Cloudflare/JS 挑战/人机验证等变体）→ 封锁；
+    再查页面 title 是否含平台名（挑战页 title 为 "Just a moment..." 等，不匹配）→ 可用；
+    最后大页面结构兜底（>15KB 且含前端框架特征）→ 可用；其余 403 一律封锁——
+    不再仅凭页面含 "<html" 判可用（挑战页几乎都含，会误判）。
+    """
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     try:
         async with session.get(
@@ -187,15 +218,26 @@ async def check_generic(session: aiohttp.ClientSession, proxy: str, url: str, na
             # 有些服务返回 3xx/404 但也算可访问（如某些仅登录后可见的平台）
             if status in (200, 201, 202, 204, 301, 302, 303, 307, 308):
                 return "可用"
-            # 403：Cloudflare/风控拦截页一律判封锁；仅当页面呈现正常业务结构（如登录墙）才算可用
             if status == 403:
                 text = await resp.text()
-                if any(kw in text for kw in ["cf-chl", "cf-challenge", "challenges.cloudflare",
-                                             "cf-browser-verification", "Attention Required",
-                                             "Just a moment"]):
+                low = text.lower()
+                # 挑战/风控页特征（含变体：验证人类/JS 挑战/reCAPTCHA 等）
+                if any(k in low for k in ["cf-chl", "cf-challenge", "challenges.cloudflare",
+                                          "cf-browser-verification", "attention required",
+                                          "just a moment", "verify you are human",
+                                          "checking your browser", "enable javascript",
+                                          "cf-turnstile", "challenge-platform",
+                                          "recaptcha", "hcaptcha", "turnstile"]):
                     return "封锁"
-                if any(kw in text for kw in ["<html", "<!DOCTYPE", "window.__NUXT",
-                                             "react-root"]):
+                # 平台自身页面：title 含平台名才算可用（挑战页 title 不含平台名）
+                m = re.search(r"<title[^>]*>(.*?)</title>", text, re.I | re.S)
+                title = re.sub(r"\s+", " ", m.group(1)).strip().lower() if m else ""
+                if name and name.lower() in title:
+                    return "可用"
+                # 大页面结构兜底：真实业务页（登录墙等）通常远大于挑战页
+                if len(text) > 15000 and any(k in low for k in
+                                             ["window.__NUXT", "react-root", 'id="root"',
+                                              "window.__NEXT_DATA__"]):
                     return "可用"
                 return "封锁"
             return f"({status})"
@@ -512,7 +554,9 @@ async def run_streaming_test(mihomo: MihomoEngine, nodes: list[ProxyNode],
             await asyncio.sleep(0.3)
             proxy = mihomo.get_proxy_url()
             # 每个节点独立 session，防止连接复用导致走错出口
-            async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=ssl_ctx, force_close=True)) as sess:
+            async with aiohttp.ClientSession(
+                    connector=aiohttp.TCPConnector(ssl=ssl_ctx, force_close=True),
+                    max_field_size=65536, max_line_size=65536) as sess:
                 streaming = await check_one_node_streaming(sess, proxy, node, services)
                 if node.name in results:
                     results[node.name].streaming = streaming
