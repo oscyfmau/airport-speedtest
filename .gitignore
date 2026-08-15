@@ -15,3 +15,6 @@ log/
 
 # 临时验证脚本
 _verify*.py
+
+# 发布打包产物（tools/pack_release.py 输出）
+dist/
