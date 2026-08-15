@@ -9,7 +9,7 @@ Pull all nodes from an airport subscription, test latency, speed, streaming unlo
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Downloads](https://img.shields.io/github/downloads/oscyfmau/airport-speedtest/total?style=flat-square)](https://github.com/oscyfmau/airport-speedtest/releases)
 
-Version: v4.10.1 | Repository: [github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) | [Changelog](CHANGELOG.md)
+Version: v4.11.0 | Repository: [github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) | [Changelog](CHANGELOG.md)
 
 > This project was written by AI and developed for personal needs — take it as-is.
 
@@ -49,6 +49,7 @@ The mihomo core downloads automatically on first run to `bin/` (about 47MB) — 
 - Web page simulation: 4 representative sites loaded concurrently, first-byte latency recorded; CN exits auto-switch to domestic sites (Baidu/Bilibili/Tencent)
 - Retest mechanism: timed-out nodes are retested before the report; recovered nodes get a re-run speed test
 - Output: PNG visual report (bar charts / risk colors / reuse marks) + JSON data + JSONL structured logs (subscription tokens auto-masked)
+- Console experience: per-UA feedback while parsing the subscription, real-time per-node result lines during speed tests, per-stage summaries, and a TOP-5 console ranking at the end (results visible even without opening the PNG); progress bars disappear after each stage without residue
 
 ## Installation & Running
 
@@ -107,25 +108,33 @@ Subscription URLs are read by default from `代理.txt` at the project root (one
 | 3. AI streaming | 8 AI platform checks |
 | 4. All streaming | All 34 platforms |
 | 5. View last result | Open the latest PNG report in the output folder |
-| 6. Update core | Download the latest mihomo core (download first, then replace) |
+| 6. Update core | Download the latest mihomo core (shows current/target version; downloads first, then replaces) |
 | 7. Exit | Exit the program |
+| 8. Quick speed test | Same as 1 but with a 5s speed window and no IP check (saves time and traffic) |
+
+The menu header shows the subscription-file status and a summary of the last run; press Ctrl+C during a test to interrupt (a partial report is generated), at the menu press Ctrl+C once to return to the menu and twice to exit.
 
 ### Sample Console Output
 
-(Excerpt from a `--fast` run; values vary by network. Node flags display as country codes in the console.)
+(Excerpt from a `--fast` run; values vary by network. Node flags display as country codes in the console; per-node result lines during the speed-test stage have no timestamps.)
 
 ```
-2026-08-01 21:30:05 INFO  Parsed: 33 nodes (vmess 20 / vless 8 / trojan 5)
-2026-08-01 21:30:09 INFO  TCP detection done: 26/33 reachable, avg latency 128ms
-2026-08-01 21:30:10 INFO  [JP] 日本-东京-01 latency 45ms, starting speed test
-2026-08-01 21:30:22 INFO  [JP] 日本-东京-01 avg 21.3MB/s, peak 34.5MB/s
-2026-08-01 21:30:23 INFO  [HK] 香港-荃湾-02 latency 62ms, starting speed test
-2026-08-01 21:30:36 INFO  [HK] 香港-荃湾-02 avg 15.8MB/s, peak 28.1MB/s
-2026-08-01 21:30:37 INFO  [US] 美国-洛杉矶-03 latency 168ms, starting speed test
-2026-08-01 21:30:50 INFO  [US] 美国-洛杉矶-03 avg 9.2MB/s, peak 12.6MB/s
-2026-08-01 21:33:52 INFO  Test finished in 3m 47s
-2026-08-01 21:33:52 INFO  Report saved: output/测速结果_fast_20260801_213352.png
-2026-08-01 21:33:52 INFO  JSON saved: output/测速结果_fast_20260801_213352.json
+2026-08-01 21:30:05 INFO  Parsing subscription: https://example.com/api/***
+2026-08-01 21:30:06 INFO  UA curl/8.0 parsed 33 nodes
+2026-08-01 21:30:08 INFO  [OK] parsed 33 nodes
+2026-08-01 21:30:09 INFO  [1/2] TCP ping latency test
+2026-08-01 21:30:11 INFO  TCP detection done: 26/33 reachable directly
+[1/33] [JP] 日本-东京-01                    45ms    21.3MB/s
+[2/33] [HK] 香港-荃湾-02                    62ms    15.8MB/s
+[3/33] [US] 美国-洛杉矶-03                 168ms     9.2MB/s
+2026-08-01 21:33:52 INFO  Speed test done: 30/33 ok | fastest 34.5MB/s ([JP] 日本-东京-01) | avg 8.1MB/s
+2026-08-01 21:33:52 INFO  Test finished in 227s, 33 nodes total
+2026-08-01 21:33:52 INFO  Report: output/测速结果_fast_20260801_213352.png
+Node name                         Latency  HTTP    Avg       Max
+[JP] 日本-东京-01                   45ms   118ms   21.3MB/s   34.5MB/s
+[HK] 香港-荃湾-02                   62ms   151ms   15.8MB/s   28.1MB/s
+[US] 美国-洛杉矶-03                168ms   201ms    9.2MB/s   12.6MB/s
+... 33 nodes total, full results in the report
 ```
 
 ## Test Flow
@@ -281,7 +290,7 @@ The mihomo core is downloaded from GitHub (~47MB) and may fail on some networks.
 - Traffic multiplier requires the subscription server to return the `subscription-userinfo` header (most mainstream airport panels do) and metered traffic updates may lag — treat it as a reference only
 - Web page simulation adds about 3-8 seconds per node in standard/full tests (4 sites concurrently, 8s timeout); skipped in `--fast` mode
 - TCP packet loss counts failures across 3 handshakes and is sensitive to transient jitter — reference only
-- Platform support (v4.10.1): Linux / macOS are NOT actually tested — the mihomo core auto-download is now fixed (Windows `.zip` / Linux-macOS `.gz` formats, x86_64/arm64 architectures; the download & decompress path was verified in a simulated Linux environment); on macOS a manually downloaded mihomo placed into `bin/` is blocked by Gatekeeper ("unidentified developer") — use the first-run auto-download or menu option `6 Update core`; on headless Linux the report does not open automatically (`xdg-open` missing; the test itself and manual viewing of `output/` are unaffected), and without a CJK font the PNG report shows boxes for Chinese text (install Noto Sans CJK)
+- Platform support (v4.11.0): Linux / macOS are NOT actually tested — the mihomo core auto-download is now fixed (Windows `.zip` / Linux-macOS `.gz` formats, x86_64/arm64 architectures; the download & decompress path was verified in a simulated Linux environment); on macOS a manually downloaded mihomo placed into `bin/` is blocked by Gatekeeper ("unidentified developer") — use the first-run auto-download or menu option `6 Update core`; on headless Linux the report does not open automatically (`xdg-open` missing; the test itself and manual viewing of `output/` are unaffected), and without a CJK font the PNG report shows boxes for Chinese text (install Noto Sans CJK)
 
 ### Privacy
 

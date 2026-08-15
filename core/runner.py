@@ -49,6 +49,10 @@ def _finish_partial(results_dict: dict, mode: str, display_mode: str,
         logger.info(f"报告已生成: {img_path}")
     if json_path:
         logger.info(f"数据已生成: {json_path}")
+    try:
+        print_console_summary(list(results_dict.values()), sort_by)
+    except Exception:
+        pass  # 控制台小结失败不影响报告
     return img_path
 
 
@@ -67,7 +71,7 @@ async def _run_node_pipeline(pool: MihomoWorkerPool, node_tasks: list,
     seen_ips: set = set()
     last_ip_check = [0.0]  # 全局节流：免费 IP API 有限额，串行 + 最小间隔防 429
 
-    pbar = tqdm(total=len(node_tasks), desc="节点测试", unit="节点", mininterval=1.0)
+    pbar = tqdm(total=len(node_tasks), desc="节点测试", unit="节点", mininterval=1.0, leave=False)
 
     async def worker_loop(worker: MihomoWorker):
         while True:
@@ -348,6 +352,20 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
             logger.info(f"[{step_idx}/{len(steps)}] HTTP 测速（串行，{DOWNLOAD_CONNS} 连接/节点）")
             logger.info("=" * 50)
             await run_speed_test(mihomo, active_speed, results_dict)
+            # 阶段小结：成功/最快/平均
+            done = [results_dict[n.name] for n in active_speed if n.name in results_dict]
+            spd_ok = [r for r in done if r.speed is not None]
+            if spd_ok:
+                best_r = max(spd_ok, key=lambda r: r.speed or 0)
+                avg_spd = sum(r.speed or 0 for r in spd_ok) / len(spd_ok)
+                fail_n = len(done) - len(spd_ok)
+                logger.info(
+                    "测速完成: 成功 %d/%d | 最快 %.1fMB/s (%s) | 平均 %.1fMB/s%s",
+                    len(spd_ok), len(done), best_r.speed or 0,
+                    _flag_to_text(best_r.node.name), avg_spd,
+                    f" | 失败 {fail_n}" if fail_n else "")
+            else:
+                logger.info("测速完成: %d 个节点均未测出速度", len(done))
             step_idx += 1
 
         # 阶段3(补测): 测速完成后，对仍超时的节点重新测 TCP（直连 + 隧道），恢复的补测速
@@ -539,6 +557,10 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
     if _LOG_FILE:
         logger.info(f"日志: {_LOG_FILE}")
     logger.info("=" * 50)
+    try:
+        print_console_summary(list(results_dict.values()), sort_by)
+    except Exception:
+        pass  # 控制台小结失败不影响主流程
     return img_path
 
 __all__ = ['_finish_partial', '_run_node_pipeline', 'run_test']

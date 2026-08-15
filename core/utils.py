@@ -154,4 +154,34 @@ def _pad_right(text: str, width: int) -> str:
     """在文本右侧填充空格到指定显示宽度"""
     return text + " " * max(0, width - _str_width(text))
 
-__all__ = ['HAS_CLOUDSCRAPER', 'HAS_YTDLP', '_SENSITIVE_PARAMS', '_mask_url', '_URL_IN_TEXT_RE', '_URL_REL_RE', '_safe_exc_str', '_FLAG_PAIR_RE', '_flag_to_text', '_no_verify_ssl', '_remove_prefix', 'b64decode_pad', '_str_width', '_pad_right']
+
+def _trunc_width(text: str, width: int, suffix: str = "…") -> str:
+    """按显示宽度截断字符串（CJK 按 2 宽计），超出加省略号"""
+    if _str_width(text) <= width:
+        return text
+    out = ""
+    w = 0
+    for c in text:
+        cw = _str_width(c)
+        if w + cw > width - _str_width(suffix):
+            break
+        out += c
+        w += cw
+    return out + suffix
+
+
+def _fmt_size(n_bytes: float) -> str:
+    """字节数人性化显示（B/KB/MB/GB，1 位小数）"""
+    try:
+        n = float(n_bytes)
+    except (TypeError, ValueError):
+        return "--"
+    if n < 1024:
+        return f"{n:.0f}B"
+    if n < 1024 * 1024:
+        return f"{n / 1024:.1f}KB"
+    if n < 1024 * 1024 * 1024:
+        return f"{n / 1024 / 1024:.1f}MB"
+    return f"{n / 1024 / 1024 / 1024:.1f}GB"
+
+__all__ = ['HAS_CLOUDSCRAPER', 'HAS_YTDLP', '_SENSITIVE_PARAMS', '_mask_url', '_URL_IN_TEXT_RE', '_URL_REL_RE', '_safe_exc_str', '_FLAG_PAIR_RE', '_flag_to_text', '_no_verify_ssl', '_remove_prefix', 'b64decode_pad', '_str_width', '_pad_right', '_trunc_width', '_fmt_size']

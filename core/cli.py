@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 from .config import *
 from .engine import *
@@ -32,7 +33,33 @@ def _open_report(path: str) -> bool:
         return False
 
 
-def show_menu():
+_MODE_NAMES = {"speed": "简单测速", "basic": "简单测速", "normal": "标准测试",
+               "full": "完整测速", "streaming": "流媒体", "streaming_ai": "AI流媒体",
+               "streaming_all": "全部流媒体"}
+
+
+def _last_run_line(last_result_path: str = "") -> str:
+    """上次结果摘要行：优先本次会话结果，否则 output/ 最新 PNG"""
+    target = last_result_path if last_result_path and os.path.exists(last_result_path) else ""
+    if not target and os.path.exists(OUTPUT_DIR):
+        pngs = [f for f in os.listdir(OUTPUT_DIR) if f.endswith(".png")]
+        if pngs:
+            latest = max(pngs, key=lambda f: os.path.getmtime(os.path.join(OUTPUT_DIR, f)))
+            target = os.path.join(OUTPUT_DIR, latest)
+    if not target:
+        return "上次结果: 无"
+    base = os.path.basename(target)
+    mode = ""
+    if base.startswith("测速结果_"):
+        mode = _MODE_NAMES.get(base[len("测速结果_"):].rsplit("_", 2)[0], "")
+    try:
+        mt = time.strftime("%m-%d %H:%M", time.localtime(os.path.getmtime(target)))
+    except OSError:
+        mt = "?"
+    return f"上次结果: {mt} {mode}".strip()
+
+
+def show_menu(last_result_path: str = ""):
     """显示交互菜单"""
     subprocess.call("cls" if sys.platform == "win32" else "clear", shell=True)
     print("╔════════════════════════════════╗")
@@ -48,7 +75,14 @@ def show_menu():
     print(f"║ {_pad_right('5. 查看上次结果', 31)}║")
     print(f"║ {_pad_right('6. 更新 mihomo 内核', 31)}║")
     print(f"║ {_pad_right('7. 退出', 31)}║")
+    print(f"║ {_pad_right('8. 快速测速(5s/跳过IP)', 31)}║")
     print("╚════════════════════════════════╝")
+    # 状态行（菜单重绘时刷新）
+    urls = read_subscribe_urls()
+    sub_txt = f"订阅文件: 已配置 ({len(urls)} 条)" if urls else "订阅文件: 未配置（测试时需手动输入 URL）"
+    print(sub_txt)
+    print(_last_run_line(last_result_path))
+    print("提示: 回车=重绘菜单 · 连续两次 Ctrl+C=退出")
 
 
 async def async_main():
@@ -147,12 +181,28 @@ async def async_main():
 
     # 交互菜单模式
     last_result_path = ""
+    ctrl_c_count = 0
     while True:
-        show_menu()
-        choice = input("\n请选择 [1-7]: ").strip()
+        show_menu(last_result_path)
+        try:
+            choice = input("\n请选择 [1-8]: ").strip()
+            ctrl_c_count = 0  # 正常输入后清零
+        except KeyboardInterrupt:
+            ctrl_c_count += 1
+            if ctrl_c_count >= 2:
+                print("\n再见!")
+                break
+            print("\n（再按一次 Ctrl+C 退出，或直接回车返回菜单）")
+            try:
+                input()
+            except KeyboardInterrupt:
+                print("\n再见!")
+                break
+            continue
         logger.debug("菜单选择: %s", choice, extra=_ev("menu_choice", {"choice": choice}))
 
-        if choice in ("1", "2", "3", "4"):
+        if choice in ("1", "2", "3", "4", "8"):
+            fast = choice == "8"  # 快速测速：5s 窗口/跳过 IP 检测
             urls = read_subscribe_urls()
             if not urls:
                 manual = input("未找到 代理.txt，请输入订阅URL: ").strip()
@@ -162,9 +212,43 @@ async def async_main():
                               {"url": _mask_url(manual) if manual else ""}))
                 if manual:
                     urls = [manual]
+                    # 询问保存到 代理.txt（默认不保存；重复行跳过）
+                    try:
+                        save = input("保存该订阅 URL 到 代理.txt 吗？[y/N]: ").strip().lower()
+                    except KeyboardInterrupt:
+                        save = ""
+                    if save in ("y", "yes"):
+                        try:
+                            exists = os.path.exists(SUBSCRIBE_FILE)
+                            saved = False
+                            if exists:
+                                with open(SUBSCRIBE_FILE, "r", encoding="utf-8-sig") as fr:
+                                    lines = [l for l in fr]
+                                if manual in [l.strip() for l in lines if l.strip()]:
+                                    print("[信息] 该 URL 已在 代理.txt 中")
+                                else:
+                                    with open(SUBSCRIBE_FILE, "a", encoding="utf-8") as f:
+                                        if lines and not lines[-1].endswith("\n"):
+                                            f.write("\n")
+                                        f.write(manual + "\n")
+                                    print("[OK] 已保存到 代理.txt")
+                                    saved = True
+                            else:
+                                with open(SUBSCRIBE_FILE, "w", encoding="utf-8") as f:
+                                    f.write(manual + "\n")
+                                print("[OK] 已保存到 代理.txt")
+                                saved = True
+                            if saved:
+                                logger.info("订阅 URL 已保存到 代理.txt",
+                                            extra=_ev("manual_subscribe_input",
+                                                      {"url": _mask_url(manual), "saved": True}))
+                        except Exception as e:
+                            logger.warning("保存 代理.txt 失败: %s", _safe_exc_str(e))
+                            print(f"[错误] 保存失败: {_safe_exc_str(e)}")
                 else:
                     continue
-            mode_map = {"1": "speed", "2": "normal", "3": "streaming_ai", "4": "streaming_all"}
+            mode_map = {"1": "speed", "2": "normal", "3": "streaming_ai",
+                        "4": "streaming_all", "8": "speed"}
             mode = mode_map.get(choice, "speed")
 
             print("\n排序方式：")
@@ -181,7 +265,7 @@ async def async_main():
                         "6": "name_asc", "7": "name_desc"}
             sort_by = sort_map.get(sort_choice, "max_desc")
 
-            last_result_path = await run_test(urls, mode, sort_by)
+            last_result_path = await run_test(urls, mode, sort_by, fast=fast)
             if last_result_path and os.path.exists(last_result_path):
                 _open_report(last_result_path)
             input("\n按 Enter 返回菜单...")
@@ -201,6 +285,19 @@ async def async_main():
             input("\n按 Enter 返回菜单...")
 
         elif choice == "6":
+            # 版本对比：现有内核 mihomo -v vs 远程最新 tag（失败静默降级）
+            cur_bin = ""
+            if os.path.exists(MIHOMO_DIR):
+                for f in os.listdir(MIHOMO_DIR):
+                    if f.startswith("mihomo") and (f.endswith(".exe") or "." not in f):
+                        cur_bin = os.path.join(MIHOMO_DIR, f)
+                        break
+            cur_ver = MihomoEngine._get_mihomo_version(cur_bin) if cur_bin else ""
+            target_ver = MihomoEngine._get_latest_tag()
+            if cur_ver:
+                print(f"当前版本: {cur_ver}" + (f" → 目标版本: {target_ver}" if target_ver else ""))
+            elif target_ver:
+                print(f"目标版本: {target_ver}")
             print("正在更新 mihomo 内核...")
             try:
                 tmp_dir = tempfile.mkdtemp(prefix="mihomo_update_")
@@ -225,9 +322,11 @@ async def async_main():
                         raise
                     if os.path.exists(bak):
                         shutil.rmtree(bak, ignore_errors=True)  # 成功后清理备份
+                    new_ver = MihomoEngine._get_mihomo_version(dst)
                     logger.info(f"mihomo 更新完成: {dst}",
-                                extra=_ev("mihomo_update", {"ok": True, "path": dst}))
-                    print(f"[OK] 更新完成: {dst}")
+                                extra=_ev("mihomo_update", {"ok": True, "path": dst,
+                                                            "version": new_ver}))
+                    print(f"[OK] 更新完成: {dst}" + (f" ({new_ver})" if new_ver else ""))
                 else:
                     logger.error("mihomo 更新失败（下载或解压失败）",
                                  extra=_ev("mihomo_update", {"ok": False, "error": "download/unzip"}))
@@ -255,6 +354,12 @@ async def async_main():
 def main():
     """同步入口"""
     atexit.register(_cleanup_procs)  # 兜底终止残留 mihomo 进程
+    # 直接 python 运行时控制台可能是 GBK：切到 UTF-8 保证菜单边框/中文正常（run.bat 已 chcp）
+    try:
+        if sys.platform == "win32" and sys.stdout.isatty():
+            os.system("chcp 65001 >nul")
+    except Exception:
+        pass
     # 重定向/管道输出用 UTF-8（Windows 默认 ANSI 代码页会出乱码）
     try:
         if not sys.stdout.isatty():
@@ -275,4 +380,4 @@ def main():
     finally:
         _cleanup_empty_log()
 
-__all__ = ['_open_report', 'show_menu', 'async_main', 'main']
+__all__ = ['_MODE_NAMES', '_last_run_line', '_open_report', 'show_menu', 'async_main', 'main']

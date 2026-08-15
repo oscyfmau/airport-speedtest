@@ -9,7 +9,7 @@
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Downloads](https://img.shields.io/github/downloads/oscyfmau/airport-speedtest/total?style=flat-square)](https://github.com/oscyfmau/airport-speedtest/releases)
 
-版本：v4.10.1 ｜ 仓库：[github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) ｜ [更新记录](CHANGELOG.md)
+版本：v4.11.0 ｜ 仓库：[github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) ｜ [更新记录](CHANGELOG.md)
 
 > 本项目由 AI 编写完成，因个人测速需求而开发，按需取用。
 
@@ -49,6 +49,7 @@ mihomo 内核无需手动下载，首次运行时自动下载到 `bin/`（约 47
 - 网页模拟：并发加载 4 个代表性站点记首字节耗时，落地 CN 自动换国内站点（百度/哔哩哔哩/腾讯）
 - 补测机制：报告前自动补测超时节点，恢复的节点补跑测速
 - 输出：PNG 可视化报告（柱状图/风险配色/复用标注）+ JSON 结构化数据 + JSONL 结构化日志（订阅 token 自动遮蔽）
+- 控制台体验：订阅解析按 UA 逐次反馈、测速逐节点实时结果行、每阶段小结、结束时控制台 TOP5 排行（不开图也能看结果）；进度条阶段结束自动消失不残留
 
 ## 安装与运行
 
@@ -107,25 +108,33 @@ python core/speed_test.py https://你的订阅链接 --full   # 完整报告
 | 3. AI 流媒体 | 8 个 AI 平台检测 |
 | 4. 全部流媒体 | 34 个平台全测 |
 | 5. 查看上次结果 | 打开 output 目录最新的 PNG 报告 |
-| 6. 更新内核 | 下载最新 mihomo 内核（先下载后替换） |
+| 6. 更新内核 | 下载最新 mihomo 内核（显示当前/目标版本，先下载后替换） |
 | 7. 退出 | 退出程序 |
+| 8. 快速测速 | 同 1 但 5 秒测速窗口、跳过 IP 检测（省时省流量） |
+
+菜单顶部会显示订阅文件配置状态与上次结果摘要；测试中按 Ctrl+C 可中断（生成部分报告），菜单处按一次 Ctrl+C 返回菜单、连续两次退出。
 
 ### 控制台输出示例
 
-（`--fast` 模式节选，数值因网络而异；节点国旗在控制台显示为国家代码）
+（`--fast` 模式节选，数值因网络而异；节点国旗在控制台显示为国家代码；测速阶段的逐节点结果行无时间戳）
 
 ```
-2026-08-01 21:30:05 INFO  解析完成：33 个节点（vmess 20 / vless 8 / trojan 5）
-2026-08-01 21:30:09 INFO  TCP 检测完成：26/33 可达，平均延迟 128ms
-2026-08-01 21:30:10 INFO  [JP] 日本-东京-01 延迟 45ms，开始测速
-2026-08-01 21:30:22 INFO  [JP] 日本-东京-01 平均 21.3MB/s，峰值 34.5MB/s
-2026-08-01 21:30:23 INFO  [HK] 香港-荃湾-02 延迟 62ms，开始测速
-2026-08-01 21:30:36 INFO  [HK] 香港-荃湾-02 平均 15.8MB/s，峰值 28.1MB/s
-2026-08-01 21:30:37 INFO  [US] 美国-洛杉矶-03 延迟 168ms，开始测速
-2026-08-01 21:30:50 INFO  [US] 美国-洛杉矶-03 平均 9.2MB/s，峰值 12.6MB/s
-2026-08-01 21:33:52 INFO  测试完成，共 3 分 47 秒
-2026-08-01 21:33:52 INFO  报告已生成：output/测速结果_fast_20260801_213352.png
-2026-08-01 21:33:52 INFO  JSON 已导出：output/测速结果_fast_20260801_213352.json
+2026-08-01 21:30:05 INFO  解析订阅: https://example.com/api/***
+2026-08-01 21:30:06 INFO  UA curl/8.0 解析到 33 个节点
+2026-08-01 21:30:08 INFO  [成功] 解析到 33 个节点
+2026-08-01 21:30:09 INFO  [1/2] TCP Ping 延迟测试
+2026-08-01 21:30:11 INFO  TCP 检测完成: 直连 26/33 可达
+[1/33] [JP] 日本-东京-01                    45ms    21.3MB/s
+[2/33] [HK] 香港-荃湾-02                    62ms    15.8MB/s
+[3/33] [US] 美国-洛杉矶-03                 168ms     9.2MB/s
+2026-08-01 21:33:52 INFO  测速完成: 成功 30/33 | 最快 34.5MB/s ([JP] 日本-东京-01) | 平均 8.1MB/s
+2026-08-01 21:33:52 INFO  测试完成! 耗时 227 秒，共 33 个节点
+2026-08-01 21:33:52 INFO  报告: output/测速结果_fast_20260801_213352.png
+节点名称                          延迟    HTTP    平均       最大
+[JP] 日本-东京-01                45ms   118ms   21.3MB/s   34.5MB/s
+[HK] 香港-荃湾-02                62ms   151ms   15.8MB/s   28.1MB/s
+[US] 美国-洛杉矶-03             168ms   201ms    9.2MB/s   12.6MB/s
+... 共 33 个节点，完整结果见报告
 ```
 
 ## 测试流程
@@ -281,7 +290,7 @@ mihomo 内核需要从 GitHub 下载（约 47MB），国内网络可能失败。
 - 流量倍率依赖订阅服务器在响应头返回 `subscription-userinfo`（主流机场面板均支持），且计费流量增量有更新延迟——倍率仅供参考
 - 网页模拟测速会在标准/完整测试中为每个节点额外增加约 3-8 秒（4 站点并发、8 秒超时）；`--fast` 模式跳过
 - TCP 丢包率为 3 次握手的失败计数，对瞬时抖动敏感，仅作参考
-- 平台支持（v4.10.1）：Linux / macOS 未经实测——mihomo 内核自动下载已修复（Windows `.zip` / Linux/macOS `.gz` 格式，x86_64/arm64 架构，下载与解压路径已实测验证）；macOS 手动下载 mihomo 放入 `bin/` 会被 Gatekeeper 拦截（"无法验证开发者"），请用首次运行自动下载或菜单 `6 更新内核`；Linux 无图形界面时报告不会自动打开（`xdg-open` 不存在，不影响测试与手动查看 `output/`），无中文字体时 PNG 报告中文显示为方框（可安装 Noto Sans CJK）
+- 平台支持（v4.11.0）：Linux / macOS 未经实测——mihomo 内核自动下载已修复（Windows `.zip` / Linux/macOS `.gz` 格式，x86_64/arm64 架构，下载与解压路径已实测验证）；macOS 手动下载 mihomo 放入 `bin/` 会被 Gatekeeper 拦截（"无法验证开发者"），请用首次运行自动下载或菜单 `6 更新内核`；Linux 无图形界面时报告不会自动打开（`xdg-open` 不存在，不影响测试与手动查看 `output/`），无中文字体时 PNG 报告中文显示为方框（可安装 Noto Sans CJK）
 
 ### 隐私说明
 

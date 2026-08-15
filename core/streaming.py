@@ -496,7 +496,7 @@ async def run_streaming_test(mihomo: MihomoEngine, nodes: list[ProxyNode],
                               results: dict[str, TestResult],
                               services: list = None) -> None:
     """运行流媒体解锁检测（用指定服务列表）"""
-    pbar = tqdm(total=len(nodes), desc="解锁检测", unit="节点", mininterval=1.0)
+    pbar = tqdm(total=len(nodes), desc="解锁检测", unit="节点", mininterval=1.0, leave=False)
     stop = asyncio.Event()
     ticker = asyncio.create_task(_pbar_ticker(pbar, stop))
     ssl_ctx = _no_verify_ssl()

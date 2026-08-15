@@ -26,7 +26,7 @@ if not defined PY goto :no_python
 %PY% -c "import aiohttp, yaml, PIL, tqdm, requests" >nul 2>&1
 if errorlevel 1 (
     echo [信息] 正在安装依赖（首次可能需要几分钟，请耐心等待）...
-    %PY% -m pip install -r "core\requirements.txt" -q
+    %PY% -m pip install -r "core\requirements.txt"
     if errorlevel 1 (
         echo [错误] 依赖安装失败，请检查网络后重试；国内网络可尝试:
         echo   %PY% -m pip install -r core\requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple

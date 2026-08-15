@@ -50,7 +50,7 @@ async def check_one_node_webpage(session: aiohttp.ClientSession, proxy: str,
 async def run_webpage_test(mihomo: MihomoEngine, nodes: list[ProxyNode],
                            results: dict[str, TestResult]) -> None:
     """运行网页模拟测速（串行路径，与 run_ip_quality_test 同构）"""
-    pbar = tqdm(total=len(nodes), desc="网页模拟", unit="节点", mininterval=1.0)
+    pbar = tqdm(total=len(nodes), desc="网页模拟", unit="节点", mininterval=1.0, leave=False)
     stop = asyncio.Event()
     ticker = asyncio.create_task(_pbar_ticker(pbar, stop))
     ssl_ctx = _no_verify_ssl()

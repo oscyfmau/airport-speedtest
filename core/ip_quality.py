@@ -209,7 +209,7 @@ async def check_ip_quality(session: aiohttp.ClientSession, proxy: str) -> dict:
 async def run_ip_quality_test(mihomo: MihomoEngine, nodes: list[ProxyNode],
                                results: dict[str, TestResult]) -> None:
     """运行 IP 风控检测"""
-    pbar = tqdm(total=len(nodes), desc="IP检测", unit="节点", mininterval=1.0)
+    pbar = tqdm(total=len(nodes), desc="IP检测", unit="节点", mininterval=1.0, leave=False)
     stop = asyncio.Event()
     ticker = asyncio.create_task(_pbar_ticker(pbar, stop))
     ssl_ctx = _no_verify_ssl()

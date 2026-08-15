@@ -8,6 +8,34 @@
 
 ---
 
+## v4.11.0
+
+### 新增
+- **菜单 8「快速测速」**：等价命令行 `--fast`（5s 测速窗口/跳过 IP 检测），菜单 1-7 编号不变
+- **菜单状态行**：`show_menu` 顶部显示订阅文件配置状态（`已配置 (N 条)`/`未配置`）与上次结果摘要（`output/` 最新 PNG 的模式与时间；会话内优先本次结果）；新增提示行「回车=重绘菜单 · 连续两次 Ctrl+C=退出」
+- **菜单 Ctrl+C 软化**：菜单输入处第一次 Ctrl+C 提示"再按一次退出"并返回菜单，连续两次才退出（正常输入后计数清零）
+- **手动输入订阅 URL 保存询问**：菜单无 `代理.txt` 手动输入 URL 后询问 `保存到 代理.txt 吗？[y/N]`（默认否；重复行跳过；保存事件 JSONL 记 `manual_subscribe_input` 且 saved=True）
+- **控制台 TOP5 小结**：`report.py` 新增 `print_console_summary(results, sort_by, top=5)`（名称/延迟/HTTP/平均/最大，有流媒体数据加解锁列、有 IP 数据加风险列，按排序取前 5 并提示剩余总数）；`run_test` 正常结束与 `_finish_partial` 提前结束两条路径均调用
+- **订阅解析进度反馈**：`parse_subscription_url` 每个 UA 尝试成功后输出 `UA {ua} 解析到 N 个节点`；`parse_subscription_urls` 每个订阅开始输出 `[i/N] 订阅解析中: {masked url}`
+- **测速阶段小结**：HTTP 测速完成后输出 `测速完成: 成功 X/Y | 最快 Z MB/s (节点名) | 平均 W MB/s[ | 失败 N]`
+- **内核下载进度增强**：`_download_mihomo` 进度行显示 `已下载/总量 百分比 速度/秒 剩余秒数`；下载完成与就绪日志带 mihomo 版本 tag
+- **菜单 6 版本对比**：更新前对现有内核跑 `mihomo -v` 显示当前版本与远程最新 tag（`_get_mihomo_version` 静态方法；解析失败静默降级），更新完成行显示新版本
+- **控制台编码自愈**：`main()` 在 win32 且 `sys.stdout.isatty()` 时执行一次 `chcp 65001`（不经 run.bat 直接运行菜单边框/中文不再乱码）
+- **进度条不残留**：全部 6 处 tqdm（TCP Ping/TCP 探测/HTTP 测速/解锁检测/IP 检测/网页模拟/节点流水线）统一 `leave=False`
+
+### 修改
+- **测速结果行紧凑化**：`run_speed_test` 中 `speed_done` 事件由 `logger.info` 降为 `logger.debug`（JSONL 文件 handler 为 DEBUG 级，结构化事件不丢）；控制台改为无时间戳逐节点行 `[i/N] 节点名 延迟 速度/错误注记`（`_trunc_width` 按显示宽度截断节点名、`_pad_right` 对齐）
+- **`run.bat` 依赖安装显示进度**：`pip install` 去掉 `-q`（首次安装不再静默数分钟）
+- **README×2**：菜单表新增选项 8；控制台输出示例更新为紧凑结果行 + 阶段小结 + TOP5 格式；特性列表补控制台体验条目；平台支持标注更新为 v4.11.0
+
+### 修复
+- **cloudscraper / yt-dlp 软依赖在 v4.10.0 模块化后实际失效**：`core/parser.py` 未本地导入 `cloudscraper`/`yt_dlp`（`utils.py` 探测的 `HAS_*` 标志经 `*` 透出、模块名不透出），`HAS_CLOUDSCRAPER=True` 时调用 `cloudscraper.create_scraper()` 抛 NameError 被 except 静默吞掉——cloudscraper 反爬回退与油管测速源（yt-dlp）分支从未真正执行；现 parser.py 本地 try-import（失败置 None）并在调用处加 `is not None` 守卫，实测不再出现 `name 'cloudscraper' is not defined` 警告
+
+### 移除
+- （无）
+
+---
+
 ## v4.10.1
 
 ### 修复

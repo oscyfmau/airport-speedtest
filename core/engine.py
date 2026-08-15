@@ -5,6 +5,7 @@ import asyncio
 import gzip
 import os
 import platform
+import re
 import secrets
 import shutil
 import socket
@@ -74,7 +75,7 @@ async def run_tcp_ping(nodes: list[ProxyNode], concurrency: int = TCP_PING_CONCU
 
     tasks = [ping_one(n) for n in nodes]
     results = {}
-    pbar = tqdm(total=len(nodes), desc="TCP Ping", unit="节点", mininterval=1.0)
+    pbar = tqdm(total=len(nodes), desc="TCP Ping", unit="节点", mininterval=1.0, leave=False)
     for coro in asyncio.as_completed(tasks):
         node, latency, ok = await coro
         results[node.name] = (latency, ok)
@@ -116,7 +117,7 @@ async def run_tcp_probe_pool(binary_path: str, candidates: list[ProxyNode]) -> d
         await queue.put(None)  # 终止哨兵
 
     ssl_ctx = _no_verify_ssl()
-    pbar = tqdm(total=len(candidates), desc="TCP探测", unit="节点", mininterval=1.0)
+    pbar = tqdm(total=len(candidates), desc="TCP探测", unit="节点", mininterval=1.0, leave=False)
 
     async def probe_loop(worker: MihomoWorker):
         while True:
@@ -230,6 +231,23 @@ class MihomoEngine:
         return ""
 
     @staticmethod
+    def _get_mihomo_version(binary_path: str) -> str:
+        """运行 mihomo -v 提取版本号（如 v1.19.29）；二进制缺失/不可执行/解析失败返回空串"""
+        try:
+            if not binary_path or not os.path.isfile(binary_path):
+                return ""
+            out = subprocess.run(
+                [binary_path, "-v"], capture_output=True, text=True, timeout=10,
+                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+            )
+            m = re.search(r"v\d+\.\d+\.\d+", out.stdout or "")
+            if m:
+                return m.group(0)
+        except Exception:
+            pass
+        return ""
+
+    @staticmethod
     def _download_mihomo(target_dir: str = None) -> str:
         """下载最新 mihomo 到 target_dir（默认 MIHOMO_DIR），成功返回二进制路径"""
         target_dir = target_dir or MIHOMO_DIR
@@ -290,16 +308,23 @@ class MihomoEngine:
                         try:
                             with open(zip_path, "wb") as f:
                                 downloaded = 0
+                                t0 = time.monotonic()
                                 for chunk in zip_resp.iter_content(8192):
                                     f.write(chunk)
                                     downloaded += len(chunk)
                                     if total:
                                         pct = downloaded / total * 100
-                                        print(f"\r  下载中: {pct:.0f}%", end="", flush=True)
+                                        el = time.monotonic() - t0
+                                        spd = downloaded / el if el > 0 else 0
+                                        eta = (total - downloaded) / spd if spd > 0 else 0
+                                        print(f"\r  下载中: {_fmt_size(downloaded)}/{_fmt_size(total)}"
+                                              f" {pct:.0f}% {_fmt_size(spd)}/s 剩余{eta:.0f}s",
+                                              end="", flush=True)
+                                print()  # 结束 \r 进度行，避免后续日志接在同一行
                         except Exception:
                             os.remove(zip_path)  # 中途异常：清理半截压缩包
                             raise
-                        logger.info(f"下载完成: {fname} ({total/1024/1024:.1f}MB)")
+                        logger.info(f"下载完成: {fname} ({_fmt_size(total)}，mihomo {tag})")
                         break
                     else:
                         zip_resp.close()  # 非 200（404/403）：关闭连接再试下一个候选
@@ -334,7 +359,7 @@ class MihomoEngine:
                             dst = os.path.join(target_dir, f"mihomo{ext}")
                             if binary_path != dst:
                                 shutil.move(binary_path, dst)
-                            logger.info(f"mihomo 已就绪: {dst}")
+                            logger.info(f"mihomo {tag} 已就绪: {dst}")
                             return dst
                 return ""
             else:

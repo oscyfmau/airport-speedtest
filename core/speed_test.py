@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""机场测速工具 v4.10.1 —— 入口与兼容重导出
+"""机场测速工具 v4.11.0 —— 入口与兼容重导出
 
 v4.10 起全部逻辑按模块拆分：
   core/config.py          常量（单一数据源）
@@ -88,6 +88,7 @@ __all__ = [
     "check_one_node_webpage", "run_webpage_test",
     # 报告
     "generate_report_image", "export_results_json", "sort_results",
+    "print_console_summary",
     # 编排与入口
     "run_test", "show_menu", "async_main", "main",
 ]

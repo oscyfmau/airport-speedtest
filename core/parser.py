@@ -17,6 +17,19 @@ from .logging_setup import *
 from .models import *
 from .utils import *
 
+# 可选依赖本地导入（v4.10 模块化后 utils 的探测标志 HAS_* 经 * 透出，但模块名不透出；
+# 不本地导入会 NameError 被静默降级，cloudscraper 反爬回退与 yt-dlp 油管源实际失效）
+try:
+    import cloudscraper
+except ImportError:
+    cloudscraper = None
+
+
+try:
+    import yt_dlp
+except ImportError:
+    yt_dlp = None
+
 def _parse_userinfo(headers) -> dict:
     """解析订阅响应头 subscription-userinfo（upload/download/total/expire）"""
     h = ""
@@ -52,7 +65,7 @@ def resolve_youtube_download_url(timeout: int = 15, proxy: str = None) -> str:
     """
     if state._YOUTUBE_DL_URL:
         return state._YOUTUBE_DL_URL
-    if not HAS_YTDLP:
+    if not HAS_YTDLP or yt_dlp is None:
         logger.warning("未安装 yt-dlp，跳过油管测速源（pip install yt-dlp）")
         return ""
     opts = {
@@ -576,7 +589,7 @@ def _try_fetch(url: str, ua: str) -> str:
     """用指定 UA 获取订阅内容（绕过系统代理）"""
     scraper = None
     try:
-        if HAS_CLOUDSCRAPER:
+        if HAS_CLOUDSCRAPER and cloudscraper is not None:
             scraper = cloudscraper.create_scraper()
             scraper.headers.update({"User-Agent": ua})
             scraper.proxies = {"http": "", "https": ""}
@@ -633,6 +646,7 @@ def parse_subscription_url(url: str) -> list[ProxyNode]:
             nodes = parse_subscription_content(content)
             if len(nodes) > len(best_nodes):
                 best_nodes = nodes
+            logger.info("UA %s 解析到 %d 个节点", ua, len(nodes))
         except Exception as e:
             logger.warning("UA %s 拉取订阅失败: %s", ua, _safe_exc_str(e))
             continue
@@ -641,7 +655,7 @@ def parse_subscription_url(url: str) -> list[ProxyNode]:
         # 全部失败，最后再用 cloudscraper 试一次
         scraper = None
         try:
-            if HAS_CLOUDSCRAPER:
+            if HAS_CLOUDSCRAPER and cloudscraper is not None:
                 scraper = cloudscraper.create_scraper()
                 resp = scraper.get(url, timeout=30)
             else:
@@ -727,8 +741,9 @@ def _dedupe_nodes(nodes: list[ProxyNode]) -> list[ProxyNode]:
 def parse_subscription_urls(urls: list) -> list[ProxyNode]:
     """解析多个订阅 URL 并合并节点（跨订阅同名去重）"""
     all_nodes = []
-    for url in urls:
+    for i, url in enumerate(urls):
         try:
+            logger.info("[%d/%d] 订阅解析中: %s", i + 1, len(urls), _mask_url(url))
             ns = parse_subscription_url(url)
             logger.info("订阅 %s 解析到 %d 个节点", _mask_url(url), len(ns))
             all_nodes.extend(ns)

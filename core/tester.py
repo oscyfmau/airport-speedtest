@@ -182,9 +182,11 @@ async def _pbar_ticker(pbar, stop_event: asyncio.Event) -> None:
 async def run_speed_test(mihomo: MihomoEngine, nodes: list[ProxyNode],
                          results: dict[str, TestResult]) -> None:
     """运行 HTTP 速度测试（串行：单节点单时刻，节点内部多连接）"""
-    pbar = tqdm(total=len(nodes), desc="HTTP测速", unit="节点", mininterval=1.0)
+    pbar = tqdm(total=len(nodes), desc="HTTP测速", unit="节点", mininterval=1.0, leave=False)
     stop = asyncio.Event()
     ticker = asyncio.create_task(_pbar_ticker(pbar, stop))
+    total_n = len(nodes)
+    idx_w = len(str(total_n))
     try:
         for i, node in enumerate(nodes):
             display = _flag_to_text(node.name)
@@ -193,6 +195,7 @@ async def run_speed_test(mihomo: MihomoEngine, nodes: list[ProxyNode],
             if not ok:
                 logger.warning("切换节点失败: %s", node.name,
                                extra=_ev("switch_node", {"node": node.name, "ok": False}))
+                print(f"[{i + 1:>{idx_w}}/{total_n}] {_pad_right(_trunc_width(display, 26), 26)} 切换失败")
                 pbar.set_postfix_str(f"{display} 切换失败", refresh=False)
                 pbar.update(1)
                 continue
@@ -207,7 +210,7 @@ async def run_speed_test(mihomo: MihomoEngine, nodes: list[ProxyNode],
                 results[node.name].speed_per_sec = per_sec
                 if err_note:
                     results[node.name].error = err_note
-            logger.info(
+            logger.debug(
                 "测速 %s 延迟=%s 平均=%s 峰值=%s %s",
                 node.name,
                 f"{http_latency:.0f}ms" if http_latency else "--",
@@ -222,10 +225,13 @@ async def run_speed_test(mihomo: MihomoEngine, nodes: list[ProxyNode],
                     "error": err_note or None,
                 }),
             )
+            lat_txt = f"{http_latency:.0f}ms" if http_latency else "--"
+            spd_txt = f"{speed:.1f}MB/s" if speed else (err_note or "--")
+            # 紧凑结果行（无时间戳）：与 tqdm 并存，用户逐节点可见
+            print(f"[{i + 1:>{idx_w}}/{total_n}] {_pad_right(_trunc_width(display, 26), 26)} "
+                  f"{lat_txt:>7} {spd_txt:>10}")
             pbar.set_postfix_str(
-                f"{display} "
-                f"{f'{http_latency:.0f}ms' if http_latency else '--'} "
-                f"{f'{speed:.1f}MB/s' if speed else (err_note or '--')}",
+                f"{display} {lat_txt} {spd_txt}",
                 refresh=False,
             )
             pbar.update(1)

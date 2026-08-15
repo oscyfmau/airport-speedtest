@@ -170,6 +170,48 @@ def sort_results(results, sort_by):
     return sorted(results, key=lambda r: (r.max_speed is None, r.speed is None, -(r.max_speed or r.speed or 0)))
 
 
+def print_console_summary(results, sort_by="default", top: int = 5) -> None:
+    """控制台 TOP N 小结：不开 PNG 也能看结果（按排序取前 N 名）
+
+    显示列：名称 / 延迟 / HTTP / 平均 / 最大 /（有流媒体数据时）解锁 /（有 IP 数据时）风险
+    """
+    if not results:
+        return
+    ranked = sort_results(results, sort_by)
+    has_stream = any(r.streaming for r in results if r.streaming)
+    has_ip = any(r.ip_info for r in results if r.ip_info)
+    hdr = (f"{_pad_right('节点名称', 30)} {_pad_right('延迟', 7)} {_pad_right('HTTP', 7)} "
+           f"{_pad_right('平均', 10)} {_pad_right('最大', 10)}")
+    if has_stream:
+        hdr += f" {_pad_right('解锁', 5)}"
+    if has_ip:
+        hdr += f" {_pad_right('风险', 5)}"
+    print(hdr)
+    print("-" * _str_width(hdr))
+    for r in ranked[:top]:
+        name = _trunc_width(_flag_to_text(r.node.name), 30)
+        if is_udp_node(r.node):
+            ping = "UDP"
+        elif r.tcp_ping is not None:
+            ping = f"{r.tcp_ping:.0f}ms"
+        else:
+            ping = "--"
+        http = f"{r.http_latency:.0f}ms" if r.http_latency is not None else "--"
+        avg = f"{r.speed:.1f}MB/s" if r.speed else "--"
+        mx = f"{r.max_speed:.1f}MB/s" if r.max_speed else "--"
+        line = (f"{_pad_right(name, 30)} {_pad_right(ping, 7)} {_pad_right(http, 7)} "
+                f"{_pad_right(avg, 10)} {_pad_right(mx, 10)}")
+        if has_stream:
+            un = sum(1 for v in r.streaming.values() if "解锁" in v or "可用" in v)
+            line += f" {_pad_right(str(un), 5)}"
+        if has_ip:
+            risk = r.ip_info.get("risk_score")
+            line += f" {_pad_right('--' if risk is None else str(risk), 5)}"
+        print(line)
+    if len(ranked) > top:
+        print(f"... 共 {len(ranked)} 个节点，完整结果见报告")
+
+
 def export_results_json(results: list[TestResult], mode: str, display_mode: str = None) -> str:
     """导出测试结果为 JSON 文件（display_mode 为原始模式名，用于文件名与 mode 字段）"""
     display_mode = display_mode or mode
@@ -402,4 +444,4 @@ def generate_report_image(results, mode, total_time, sort_by="default", display_
         img.close()
     return fpath
 
-__all__ = ['_get_speed_color', '_bar_color', '_fmt_ms', '_fmt_mb', '_fmt_ss', '_font', '_ctxt', 'sort_results', 'export_results_json', 'generate_report_image']
+__all__ = ['_get_speed_color', '_bar_color', '_fmt_ms', '_fmt_mb', '_fmt_ss', '_font', '_ctxt', 'sort_results', 'print_console_summary', 'export_results_json', 'generate_report_image']
