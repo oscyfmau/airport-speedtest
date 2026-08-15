@@ -20,10 +20,17 @@ from .settings import *
 from .utils import *
 
 def _open_report(path: str) -> bool:
-    """打开报告文件（Windows os.startfile；macOS open；Linux xdg-open；失败不崩溃）"""
+    """打开报告文件（Windows os.startfile；macOS open；Linux xdg-open；失败不崩溃）
+
+    v4.17.0：Windows 上 os.startfile 因系统无默认应用关联失败（WinError 1155）时，
+    回退 `explorer /select` 打开所在目录并选中文件，保证报告可被找到。
+    """
     try:
         if sys.platform == "win32":
-            os.startfile(path)
+            try:
+                os.startfile(path)
+            except OSError:
+                subprocess.Popen(["explorer", "/select,", path])
         elif sys.platform == "darwin":
             subprocess.Popen(["open", path])
         else:

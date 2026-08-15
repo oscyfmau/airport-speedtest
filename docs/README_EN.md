@@ -9,7 +9,7 @@ Pull all nodes from an airport subscription, test latency, speed, streaming unlo
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Downloads](https://img.shields.io/github/downloads/oscyfmau/airport-speedtest/total?style=flat-square)](https://github.com/oscyfmau/airport-speedtest/releases)
 
-Version: v4.16.0 | Repository: [github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) | [Changelog](CHANGELOG.md)
+Version: v4.17.0 | Repository: [github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) | [Changelog](CHANGELOG.md)
 
 > This project was written by AI and developed for personal needs — take it as-is.
 
@@ -296,7 +296,7 @@ The mihomo core is downloaded from GitHub (~47MB) and may fail on some networks.
 - Traffic multiplier requires the subscription server to return the `subscription-userinfo` header (most mainstream airport panels do) and metered traffic updates may lag — treat it as a reference only
 - Web page simulation adds about 3-8 seconds per node in standard/full tests (4 sites concurrently, 8s timeout); skipped in `--fast` mode
 - TCP packet loss counts failures across 3 handshakes and is sensitive to transient jitter — reference only
-- Platform support (v4.16.0): Linux / macOS are NOT actually tested — the mihomo core auto-download is now fixed (Windows `.zip` / Linux-macOS `.gz` formats, x86_64/arm64 architectures; the download & decompress path was verified in a simulated Linux environment); on macOS a manually downloaded mihomo placed into `bin/` is blocked by Gatekeeper ("unidentified developer") — use the first-run auto-download or menu option `6 Update core`; on headless Linux the report does not open automatically (`xdg-open` missing; the test itself and manual viewing of `output/` are unaffected), and without a CJK font the PNG report shows boxes for Chinese text (install Noto Sans CJK)
+- Platform support (v4.17.0): Linux / macOS are NOT actually tested — the mihomo core auto-download is now fixed (Windows `.zip` / Linux-macOS `.gz` formats, x86_64/arm64 architectures; the download & decompress path was verified in a simulated Linux environment); on macOS a manually downloaded mihomo placed into `bin/` is blocked by Gatekeeper ("unidentified developer") — use the first-run auto-download or menu option `6 Update core`; on headless Linux the report does not open automatically (`xdg-open` missing; the test itself and manual viewing of `output/` are unaffected), and without a CJK font the PNG report shows boxes for Chinese text (install Noto Sans CJK)
 
 ### Privacy
 

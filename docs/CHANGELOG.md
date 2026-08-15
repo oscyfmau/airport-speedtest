@@ -8,6 +8,24 @@
 
 ---
 
+## v4.17.0
+
+### 修复
+- **YouTube 送中判定误报（`可用(CN)` 扩散到境外节点）**：新 /premium 页面变体把 Google 广告位地址 `https://www.google.cn/pagead/lvz?...` 嵌入页面 JS 配置（与出口地区无关，2026-08-15 实测 4 个美/日/港节点页面均出现 1 次、同日晚间另一变体 0 次），旧判定 `"www.google.cn" in text` 命中即误判送中；实测上次全量运行 5 个境外节点（美国堪萨斯/日本1/新加坡1/新加坡2/2x专线-新加坡-1）被判 `可用(CN)`。现改为三重送中信号：请求重定向到 google.cn / 页面含非 pagead 的 google.cn 链接（`www.google.cn/(?!pagead)` 或 href 形式）/ 地区码 == CN
+- **YouTube 地区提取失效（countryCode 消失 + GL 固定 US）**：新页面变体不再含 `"countryCode":"XX"`（旧正则永不命中），`INNERTUBE_CONTEXT_GL` 与 `ytcfg gl` 固定为 US（不反映出口 IP）；新增 `_extract_yt_region(text)` 优先解码 `visitorData`（base64url + URL 编码 + JSON 转义，protobuf 内嵌 `\x0a\x02<CC>`，来自 Google 对出口 IP 的地理定位），实测 4 节点全部正确（US/JP/HK/CN），回退 countryCode / INNERTUBE_CONTEXT_GL；真实 CN 出口节点（新加坡1|高速下载|移动优化，visitorData=CN）稳定返回 `可用(CN)` 而非误报
+- **报告自动打开失败（WinError 1155）**：本机无 .png 默认应用关联时 `os.startfile` 抛 `[WinError 1155] 没有应用程序与此操作的指定文件有关联`，每次运行结束记一条 ERROR 且报告打不开；`cli._open_report` 现捕获 OSError 后回退 `explorer /select,<path>` 打开所在目录并选中报告文件
+
+### 修改
+- `check_youtube` 逻辑顺序调整：先提取地区（visitorData 优先）再做送中/区域限制/ad-free 判定；`streaming.py` 新增 `base64`/`urllib.parse.unquote` 模块级导入与 `_extract_yt_region` 辅助函数（加入 `__all__`）
+
+### 新增
+- （无）
+
+### 移除
+- （无）
+
+---
+
 ## v4.16.0
 
 ### 修复

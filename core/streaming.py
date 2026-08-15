@@ -2,7 +2,9 @@
 # -*- coding: utf-8 -*-
 """流媒体解锁检测：专用检测器 / 通用检测 / 批量运行"""
 import asyncio
+import base64
 import re
+from urllib.parse import unquote
 
 import aiohttp
 from tqdm import tqdm
@@ -14,7 +16,18 @@ from .models import *
 from .utils import *
 
 async def check_youtube(session: aiohttp.ClientSession, proxy: str) -> str:
-    """检测 YouTube Premium 解锁，如果 Premium 送中则回退到普通 YouTube"""
+    """检测 YouTube Premium 解锁，如果 Premium 送中则回退到普通 YouTube
+
+    v4.17.0：修复三处误判——
+    1) 送中判定不再用 `"www.google.cn" in text`（新页面变体的广告配置
+       `https://www.google.cn/pagead/lvz?...` 与地区无关，已实测间歇出现），
+       改为：请求重定向到 google.cn / 页面含非 pagead 的 google.cn 链接 /
+       visitorData 内嵌地区码 == CN；
+    2) 地区提取优先 visitorData（base64url+protobuf，内嵌 `\\x0a\\x02<CC>`，
+       IP 地理定位，不受页面变体影响），回退 countryCode / INNERTUBE_CONTEXT_GL
+       （新页面变体 GL 固定 US，仅作最后兜底）；
+    3) countryCode 在新页面变体中已消失，旧正则不再命中。
+    """
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -27,8 +40,15 @@ async def check_youtube(session: aiohttp.ClientSession, proxy: str) -> str:
         ) as resp:
             status = resp.status
             text = await resp.text()
-            # 送中检测
-            if "www.google.cn" in text:
+            region = _extract_yt_region(text)
+            # 送中检测：真重定向 / 页面指向 google.cn 的链接（非广告位 URL）/ 地区码 CN
+            sent_to_cn = (
+                "google.cn" in str(resp.url)
+                or re.search(r'href=["\']https?://www\.google\.cn', text) is not None
+                or re.search(r"www\.google\.cn/(?!pagead)", text) is not None
+                or region == "CN"
+            )
+            if sent_to_cn:
                 # 回退检测普通 YouTube 是否可访问
                 try:
                     async with session.get("https://www.youtube.com", proxy=proxy,
@@ -41,15 +61,6 @@ async def check_youtube(session: aiohttp.ClientSession, proxy: str) -> str:
             # 区域不可用
             if "Premium is not available in your country" in text:
                 return "失败(区域限制)"
-            # 提取地区
-            region = ""
-            m = re.search(r'"countryCode":"([A-Z]{2})"', text)
-            if m:
-                region = m.group(1)
-            if not region:
-                m = re.search(r'"INNERTUBE_CONTEXT_GL"\s*:\s*"([A-Z]{2})"', text)
-                if m:
-                    region = m.group(1)
             # ad-free 标识=解锁
             if "ad-free" in text or "YouTube and YouTube Music ad-free" in text:
                 if region:
@@ -58,12 +69,41 @@ async def check_youtube(session: aiohttp.ClientSession, proxy: str) -> str:
             # 有地区代码但无 ad-free → 无 Premium 解锁但 YouTube 可访问
             if region:
                 return f"可用({region})"
-            # v4.14.0：200 但无任何可识别特征（consent/登录墙等变体）→ 至少可达
+            # 200 但无任何可识别特征（consent/登录墙等变体）→ 至少可达
             if status == 200:
                 return "可用"
             return "失败(无Premium标识)"
     except Exception as e:
         return f"错误({type(e).__name__})"
+
+
+def _extract_yt_region(text: str) -> str:
+    """从 YouTube 页面提取地区码（优先级：visitorData > countryCode > GL）
+
+    visitorData 为 base64url（可能 URL 编码 + JSON 转义），内部是 protobuf 结构，
+    地区码以 `\\x0a\\x02<CC>` 形式内嵌，来自 Google 对出口 IP 的地理定位，
+    不受页面变体（countryCode 字段消失 / GL 固定 US）影响，2026-08 实测可靠。
+    """
+    region = ""
+    m = re.search(r'"visitorData"\s*:\s*"((?:[^"\\]|\\.)*)"', text)
+    if m:
+        try:
+            vd = unquote(m.group(1).encode("utf-8").decode("unicode_escape"))
+            raw = base64.urlsafe_b64decode(vd + "=" * (-len(vd) % 4))
+            mm = re.search(rb"\x0a\x02([A-Z]{2})", raw)
+            if mm:
+                region = mm.group(1).decode()
+        except Exception:
+            pass
+    if not region:
+        m = re.search(r'"countryCode"\s*:\s*"([A-Z]{2})"', text)
+        if m:
+            region = m.group(1)
+    if not region:
+        m = re.search(r'"INNERTUBE_CONTEXT_GL"\s*:\s*"([A-Z]{2})"', text)
+        if m:
+            region = m.group(1)
+    return region
 
 
 async def check_netflix(session: aiohttp.ClientSession, proxy: str) -> str:
@@ -575,4 +615,4 @@ async def run_streaming_test(mihomo: MihomoEngine, nodes: list[ProxyNode],
             pass
         pbar.close()
 
-__all__ = ['check_youtube', 'check_netflix', 'check_disney', 'check_chatgpt', 'check_generic', 'check_bilibili', 'BILI_TW_EP_IDS', 'check_bilibili_tw', 'check_tiktok', 'check_spotify', 'check_steam', 'check_primevideo', 'check_max', 'STREAMING_CHECKERS', 'check_one_node_streaming', '_log_streaming_details', 'run_streaming_test']
+__all__ = ['check_youtube', '_extract_yt_region', 'check_netflix', 'check_disney', 'check_chatgpt', 'check_generic', 'check_bilibili', 'BILI_TW_EP_IDS', 'check_bilibili_tw', 'check_tiktok', 'check_spotify', 'check_steam', 'check_primevideo', 'check_max', 'STREAMING_CHECKERS', 'check_one_node_streaming', '_log_streaming_details', 'run_streaming_test']
