@@ -8,6 +8,29 @@
 
 ---
 
+## v4.12.0
+
+### 新增
+- **菜单 9「节点筛选测速」**：测速前按节点名关键字筛选（空格/逗号分隔=任一匹配，如 `香港 JP`）或只测订阅顺序前 N 个（`N=10`）；选简单/标准/快速模式后沿用现有排序流程；`run_test` 新增 `node_filter`/`node_limit` 参数（解析去重后过滤，`run_start` 事件 data 带 `node_filter`/`node_limit`）
+- **菜单 10「结果管理」**：`_list_reports` 列出 output/ 最近 15 份报告（PNG/JSON 按同名前缀配对、时间/模式标注），输入编号打开（优先 PNG）、`D编号` 删除（配对文件一起删）
+- **菜单 11「订阅管理」**：遮蔽显示 代理.txt 全部 URL（`_mask_url`，不打印完整 URL），`A`=添加（`_append_subscribe_url` 去重/换行处理）、`D编号`=删除某条、`O`=系统默认程序打开文件编辑；增删记 JSONL 事件（`manual_subscribe_input` 带 added/deleted）
+- **菜单 12「设置」+ 新增 `core/settings.py`**：测速窗口秒数（3-30，默认 8）、流媒体/IP/网页并行数（1-8，默认 4）、自动打开报告开关（默认开），恢复默认；持久化到 `~/.airport_speedtest.json`（JSON，进程内缓存 `load_settings`，损坏自动回退默认）；菜单模式运行测试时生效（窗口经 `run_test(window_seconds=)` 传入，非 fast 且 >0 时覆盖默认 8s、钳制 3-30；`--fast` 恒 5s），命令行直跑不受影响
+- **菜单 13「环境信息」**：一页显示工具版本 / Python 版本与平台 / 依赖版本（aiohttp/PyYAML/Pillow/tqdm/requests）/ cloudscraper 与 yt-dlp 可用性 / mihomo 版本与路径（`_get_mihomo_version`）/ 订阅条数 / 报告与日志文件数 / 当前设置
+
+### 修改
+- `run_test` 签名新增 `node_filter: str = ""`、`node_limit: int = 0`、`window_seconds: int = 0`（默认值保持旧调用完全兼容）
+- 菜单 1-4/8 运行测试时套用设置（workers/窗口/自动打开报告）
+- 菜单提示与 README×2 菜单表同步更新为 1-13
+
+### 修复
+- **日志写入遇非法 surrogate 崩溃**：管道输入/异常文本在 locale 非 UTF-8 时经 surrogateescape 解码可能携带 U+D800-DFFF，控制台 handler 写 UTF-8 抛 `UnicodeEncodeError`（logging 报错并把该条日志吞掉）、JSONL handler 同病（首次失败后静默丢日志）；新增 `utils._sanitize_surrogates`（将 surrogate 替换为 U+FFFD），`_ConsoleFormatter.format` 与 `JsonlFileHandler.emit` 写前净化
+- **`_append_subscribe_url`/菜单 11 删除破坏 代理.txt 换行风格**：原实现以通用换行模式读写（读时 \r\n→\n 归一、写时 \n→\r\n 翻译），LF 文件增删后变 CRLF、尾随换行状态改变；现读写均 `newline=""` 字节级保持原风格（增补按文件内换行风格 `\n`/`\r\n` 与尾随状态写分隔，删除按原始行逐行保留）
+
+### 移除
+- （无）
+
+---
+
 ## v4.11.0
 
 ### 新增

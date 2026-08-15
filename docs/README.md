@@ -9,7 +9,7 @@
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Downloads](https://img.shields.io/github/downloads/oscyfmau/airport-speedtest/total?style=flat-square)](https://github.com/oscyfmau/airport-speedtest/releases)
 
-版本：v4.11.0 ｜ 仓库：[github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) ｜ [更新记录](CHANGELOG.md)
+版本：v4.12.0 ｜ 仓库：[github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) ｜ [更新记录](CHANGELOG.md)
 
 > 本项目由 AI 编写完成，因个人测速需求而开发，按需取用。
 
@@ -50,6 +50,7 @@ mihomo 内核无需手动下载，首次运行时自动下载到 `bin/`（约 47
 - 补测机制：报告前自动补测超时节点，恢复的节点补跑测速
 - 输出：PNG 可视化报告（柱状图/风险配色/复用标注）+ JSON 结构化数据 + JSONL 结构化日志（订阅 token 自动遮蔽）
 - 控制台体验：订阅解析按 UA 逐次反馈、测速逐节点实时结果行、每阶段小结、结束时控制台 TOP5 排行（不开图也能看结果）；进度条阶段结束自动消失不残留
+- 菜单管理：节点筛选测速（按关键字/前 N 个）、历史结果管理（打开/删除）、订阅管理（遮蔽显示/添加/删除）、设置页（窗口秒数/并行数/自动开报告，跨会话保存）、环境信息页
 
 ## 安装与运行
 
@@ -111,6 +112,11 @@ python core/speed_test.py https://你的订阅链接 --full   # 完整报告
 | 6. 更新内核 | 下载最新 mihomo 内核（显示当前/目标版本，先下载后替换） |
 | 7. 退出 | 退出程序 |
 | 8. 快速测速 | 同 1 但 5 秒测速窗口、跳过 IP 检测（省时省流量） |
+| 9. 节点筛选测速 | 按节点名关键字（如 `香港 JP`）或前 N 个（`N=10`）筛选后测速，可选简单/标准/快速模式 |
+| 10. 结果管理 | 列出 output 最近 15 份报告（时间/模式），输入编号打开、`D编号` 删除 |
+| 11. 订阅管理 | 遮蔽显示 代理.txt 的 URL，可添加（去重）、删除、用记事本打开编辑 |
+| 12. 设置 | 测速窗口秒数（3-30，默认 8）、并行数（1-8，默认 4）、自动打开报告开关；保存到 `~/.airport_speedtest.json` 跨会话生效（菜单模式生效；`--fast` 仍为 5s） |
+| 13. 环境信息 | 工具/Python/依赖/mihomo 版本、订阅条数、报告与日志文件数 |
 
 菜单顶部会显示订阅文件配置状态与上次结果摘要；测试中按 Ctrl+C 可中断（生成部分报告），菜单处按一次 Ctrl+C 返回菜单、连续两次退出。
 
@@ -290,7 +296,7 @@ mihomo 内核需要从 GitHub 下载（约 47MB），国内网络可能失败。
 - 流量倍率依赖订阅服务器在响应头返回 `subscription-userinfo`（主流机场面板均支持），且计费流量增量有更新延迟——倍率仅供参考
 - 网页模拟测速会在标准/完整测试中为每个节点额外增加约 3-8 秒（4 站点并发、8 秒超时）；`--fast` 模式跳过
 - TCP 丢包率为 3 次握手的失败计数，对瞬时抖动敏感，仅作参考
-- 平台支持（v4.11.0）：Linux / macOS 未经实测——mihomo 内核自动下载已修复（Windows `.zip` / Linux/macOS `.gz` 格式，x86_64/arm64 架构，下载与解压路径已实测验证）；macOS 手动下载 mihomo 放入 `bin/` 会被 Gatekeeper 拦截（"无法验证开发者"），请用首次运行自动下载或菜单 `6 更新内核`；Linux 无图形界面时报告不会自动打开（`xdg-open` 不存在，不影响测试与手动查看 `output/`），无中文字体时 PNG 报告中文显示为方框（可安装 Noto Sans CJK）
+- 平台支持（v4.12.0）：Linux / macOS 未经实测——mihomo 内核自动下载已修复（Windows `.zip` / Linux/macOS `.gz` 格式，x86_64/arm64 架构，下载与解压路径已实测验证）；macOS 手动下载 mihomo 放入 `bin/` 会被 Gatekeeper 拦截（"无法验证开发者"），请用首次运行自动下载或菜单 `6 更新内核`；Linux 无图形界面时报告不会自动打开（`xdg-open` 不存在，不影响测试与手动查看 `output/`），无中文字体时 PNG 报告中文显示为方框（可安装 Noto Sans CJK）
 
 ### 隐私说明
 

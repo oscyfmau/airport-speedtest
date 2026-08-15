@@ -9,7 +9,7 @@ Pull all nodes from an airport subscription, test latency, speed, streaming unlo
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Downloads](https://img.shields.io/github/downloads/oscyfmau/airport-speedtest/total?style=flat-square)](https://github.com/oscyfmau/airport-speedtest/releases)
 
-Version: v4.11.0 | Repository: [github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) | [Changelog](CHANGELOG.md)
+Version: v4.12.0 | Repository: [github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) | [Changelog](CHANGELOG.md)
 
 > This project was written by AI and developed for personal needs — take it as-is.
 
@@ -50,6 +50,7 @@ The mihomo core downloads automatically on first run to `bin/` (about 47MB) — 
 - Retest mechanism: timed-out nodes are retested before the report; recovered nodes get a re-run speed test
 - Output: PNG visual report (bar charts / risk colors / reuse marks) + JSON data + JSONL structured logs (subscription tokens auto-masked)
 - Console experience: per-UA feedback while parsing the subscription, real-time per-node result lines during speed tests, per-stage summaries, and a TOP-5 console ranking at the end (results visible even without opening the PNG); progress bars disappear after each stage without residue
+- Menu management: filtered speed tests (by node-name keywords / first N nodes), history management (open/delete reports), subscription management (masked view/add/delete), settings page (speed window / parallelism / auto-open report, persisted across sessions), environment info page
 
 ## Installation & Running
 
@@ -111,6 +112,11 @@ Subscription URLs are read by default from `代理.txt` at the project root (one
 | 6. Update core | Download the latest mihomo core (shows current/target version; downloads first, then replaces) |
 | 7. Exit | Exit the program |
 | 8. Quick speed test | Same as 1 but with a 5s speed window and no IP check (saves time and traffic) |
+| 9. Filtered speed test | Filter nodes by name keywords (e.g. `香港 JP`) or first N nodes (`N=10`), then choose simple/standard/quick mode |
+| 10. Result management | List the latest 15 reports in output (time/mode); type a number to open, `D<number>` to delete |
+| 11. Subscription management | Masked view of 代理.txt URLs; add (deduped), delete, or open the file in Notepad |
+| 12. Settings | Speed window seconds (3-30, default 8), parallelism (1-8, default 4), auto-open report toggle; saved to `~/.airport_speedtest.json` across sessions (applies to menu mode; `--fast` stays 5s) |
+| 13. Environment info | Tool/Python/dependency/mihomo versions, subscription count, report & log file counts |
 
 The menu header shows the subscription-file status and a summary of the last run; press Ctrl+C during a test to interrupt (a partial report is generated), at the menu press Ctrl+C once to return to the menu and twice to exit.
 
@@ -290,7 +296,7 @@ The mihomo core is downloaded from GitHub (~47MB) and may fail on some networks.
 - Traffic multiplier requires the subscription server to return the `subscription-userinfo` header (most mainstream airport panels do) and metered traffic updates may lag — treat it as a reference only
 - Web page simulation adds about 3-8 seconds per node in standard/full tests (4 sites concurrently, 8s timeout); skipped in `--fast` mode
 - TCP packet loss counts failures across 3 handshakes and is sensitive to transient jitter — reference only
-- Platform support (v4.11.0): Linux / macOS are NOT actually tested — the mihomo core auto-download is now fixed (Windows `.zip` / Linux-macOS `.gz` formats, x86_64/arm64 architectures; the download & decompress path was verified in a simulated Linux environment); on macOS a manually downloaded mihomo placed into `bin/` is blocked by Gatekeeper ("unidentified developer") — use the first-run auto-download or menu option `6 Update core`; on headless Linux the report does not open automatically (`xdg-open` missing; the test itself and manual viewing of `output/` are unaffected), and without a CJK font the PNG report shows boxes for Chinese text (install Noto Sans CJK)
+- Platform support (v4.12.0): Linux / macOS are NOT actually tested — the mihomo core auto-download is now fixed (Windows `.zip` / Linux-macOS `.gz` formats, x86_64/arm64 architectures; the download & decompress path was verified in a simulated Linux environment); on macOS a manually downloaded mihomo placed into `bin/` is blocked by Gatekeeper ("unidentified developer") — use the first-run auto-download or menu option `6 Update core`; on headless Linux the report does not open automatically (`xdg-open` missing; the test itself and manual viewing of `output/` are unaffected), and without a CJK font the PNG report shows boxes for Chinese text (install Noto Sans CJK)
 
 ### Privacy
 

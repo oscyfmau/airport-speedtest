@@ -137,7 +137,8 @@ class JsonlFileHandler(logging.Handler):
             if record.exc_info and record.exc_info[0]:
                 entry["exc"] = _safe_exc_str(
                     "".join(traceback.format_exception(*record.exc_info)).strip())
-            self._fh.write(json.dumps(entry, ensure_ascii=False, default=str) + "\n")
+            line = json.dumps(entry, ensure_ascii=False, default=str) + "\n"
+            self._fh.write(_sanitize_surrogates(line))
             self._fh.flush()
         except Exception as e:
             # 写日志失败不能拖垮主流程；首次失败向 stderr 提示一次，避免静默丢失
@@ -212,6 +213,6 @@ class _ConsoleFormatter(logging.Formatter):
     """
 
     def format(self, record):
-        return _flag_to_text(super().format(record))
+        return _sanitize_surrogates(_flag_to_text(super().format(record)))
 
 __all__ = ['logger', '_LOG_FILE', '_LOG_HANDLER', '_cleanup_stale_configs', 'setup_logging', 'new_run_log', 'JsonlFileHandler', '_ev', '_pkg_version', '_cleanup_empty_log', '_install_excepthook', '_ConsoleFormatter']

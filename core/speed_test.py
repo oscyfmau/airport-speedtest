@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""机场测速工具 v4.11.0 —— 入口与兼容重导出
+"""机场测速工具 v4.12.0 —— 入口与兼容重导出
 
 v4.10 起全部逻辑按模块拆分：
   core/config.py          常量（单一数据源）
@@ -37,6 +37,7 @@ from core.parser import *
 from core.procs import *
 from core.report import *
 from core.runner import *
+from core.settings import *
 from core.state import *
 from core.streaming import *
 from core.tester import *
@@ -89,6 +90,9 @@ __all__ = [
     # 报告
     "generate_report_image", "export_results_json", "sort_results",
     "print_console_summary",
+    # 设置
+    "SETTINGS_FILE", "DEFAULTS", "load_settings", "save_settings",
+    "reset_settings", "update_settings", "invalidate_cache",
     # 编排与入口
     "run_test", "show_menu", "async_main", "main",
 ]

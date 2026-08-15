@@ -151,8 +151,15 @@ async def _run_node_pipeline(pool: MihomoWorkerPool, node_tasks: list,
 
 
 async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
-                   fast: bool = False, workers: int = DEFAULT_WORKERS) -> str:
-    """运行完整测试流程（subscribe_url 支持单个 URL 或 URL 列表）"""
+                   fast: bool = False, workers: int = DEFAULT_WORKERS,
+                   node_filter: str = "", node_limit: int = 0,
+                   window_seconds: int = 0) -> str:
+    """运行完整测试流程（subscribe_url 支持单个 URL 或 URL 列表）
+
+    node_filter: 节点名关键字过滤（空格/逗号分隔=任一匹配，空串=不过滤）
+    node_limit: 只测订阅顺序中的前 N 个节点（0=不限）
+    window_seconds: 非 fast 模式下的测速窗口秒数（0=用默认 8s；fast 恒为 5s）
+    """
     state.reset_run_state()  # 每次运行重置运行时全局（菜单连续运行防串味）
     t_start = time.monotonic()
     output_mode = mode  # 保留原始模式名（streaming_ai/streaming_all），供文件名/报告头/JSON
@@ -171,6 +178,8 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
             "mode": output_mode,
             "workers": workers,
             "fast": fast,
+            "node_filter": node_filter or None,
+            "node_limit": node_limit or None,
             "deps": {
                 "aiohttp": _pkg_version("aiohttp"),
                 "yaml": _pkg_version("PyYAML"),
@@ -212,6 +221,25 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
         logger.error("  - 请检查 代理.txt 中的订阅链接是否正确")
         return ""
 
+    # 节点筛选：关键字（任一匹配）+ 前 N 个（订阅顺序）
+    if node_filter or node_limit:
+        orig_n = len(nodes)
+        kws = [k.strip() for k in node_filter.replace(",", " ").split() if k.strip()]
+        if kws:
+            nodes = [n for n in nodes
+                     if any(k.lower() in n.name.lower() for k in kws)]
+        if node_limit and len(nodes) > node_limit:
+            nodes = nodes[:node_limit]
+        if not nodes:
+            logger.error("筛选后无匹配节点（关键字=%s 上限=%s）",
+                         node_filter or "-", node_limit or "-",
+                         extra=_ev("run_end", {"completed": False, "reason": "no_nodes_filtered",
+                                               "nodes": 0, "node_filter": node_filter,
+                                               "node_limit": node_limit}))
+            return ""
+        logger.info("节点筛选: %d → %d 个%s", orig_n, len(nodes),
+                    f"（关键字: {node_filter}）" if node_filter else f"（前 {node_limit} 个）")
+
     type_counts = {}
     for n in nodes:
         type_counts[n.type] = type_counts.get(n.type, 0) + 1
@@ -242,8 +270,15 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
     elif mode == "streaming_all":
         mode = "streaming"
 
-    # --fast：缩短测速窗口（默认 8s → 5s）
-    state.SPEED_WINDOW_SECONDS = SPEED_WINDOW_FAST_SECONDS if fast else SPEED_WINDOW_DEFAULT_SECONDS
+    # --fast：缩短测速窗口（默认 8s → 5s）；非 fast 时可经 window_seconds 参数覆盖（菜单设置）
+    if fast:
+        state.SPEED_WINDOW_SECONDS = SPEED_WINDOW_FAST_SECONDS
+    else:
+        try:
+            state.SPEED_WINDOW_SECONDS = (max(3, min(int(window_seconds), 30))
+                                          if window_seconds > 0 else SPEED_WINDOW_DEFAULT_SECONDS)
+        except (TypeError, ValueError):
+            state.SPEED_WINDOW_SECONDS = SPEED_WINDOW_DEFAULT_SECONDS  # 非法入参回退默认
 
     # 计算步骤数
     steps = []

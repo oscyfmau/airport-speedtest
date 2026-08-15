@@ -184,4 +184,15 @@ def _fmt_size(n_bytes: float) -> str:
         return f"{n / 1024 / 1024:.1f}MB"
     return f"{n / 1024 / 1024 / 1024:.1f}GB"
 
-__all__ = ['HAS_CLOUDSCRAPER', 'HAS_YTDLP', '_SENSITIVE_PARAMS', '_mask_url', '_URL_IN_TEXT_RE', '_URL_REL_RE', '_safe_exc_str', '_FLAG_PAIR_RE', '_flag_to_text', '_no_verify_ssl', '_remove_prefix', 'b64decode_pad', '_str_width', '_pad_right', '_trunc_width', '_fmt_size']
+
+def _sanitize_surrogates(s: str) -> str:
+    """把字符串中的非法 surrogate（U+D800-DFFF）替换为 U+FFFD
+
+    来源：管道输入/异常文本在 locale 非 UTF-8 且 errors=surrogateescape
+    解码时可能产生；不净化会导致控制台/JSONL 写 UTF-8 时 UnicodeEncodeError。
+    """
+    if s and any(0xD800 <= ord(c) <= 0xDFFF for c in s):
+        return s.encode("utf-8", "replace").decode("utf-8")
+    return s
+
+__all__ = ['HAS_CLOUDSCRAPER', 'HAS_YTDLP', '_SENSITIVE_PARAMS', '_mask_url', '_URL_IN_TEXT_RE', '_URL_REL_RE', '_safe_exc_str', '_FLAG_PAIR_RE', '_flag_to_text', '_no_verify_ssl', '_remove_prefix', 'b64decode_pad', '_str_width', '_pad_right', '_trunc_width', '_fmt_size', '_sanitize_surrogates']
