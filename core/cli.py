@@ -429,7 +429,7 @@ async def async_main():
                     mode = ""
                     if base.startswith("测速结果_"):
                         mode = _MODE_NAMES.get(base[len("测速结果_"):].rsplit("_", 2)[0], "")
-                    print(f"  {i:>2}. {mt} {mode} {base}")
+                    print(f"  {i:>2}. {mt} {_pad_right(mode, 10)} {base}")
                 act = input("操作: ").strip().upper()
                 if act:
                     try:
@@ -546,14 +546,14 @@ async def async_main():
             input("\n按 Enter 返回菜单...")
 
         elif choice == "13":
-            # 环境信息：版本/依赖/mihomo/订阅/文件统计
+            # 环境信息：版本/依赖/mihomo/订阅/文件统计（标签列统一 16 显示宽对齐）
             print("=" * 50)
-            print(f"工具版本: v{VERSION}")
-            print(f"Python: {sys.version.split()[0]} ({sys.platform})")
-            print(f"依赖: aiohttp {_pkg_version('aiohttp')} / PyYAML {_pkg_version('PyYAML')} / "
+            print(f"{_pad_right('工具版本', 16)}: v{VERSION}")
+            print(f"{_pad_right('Python', 16)}: {sys.version.split()[0]} ({sys.platform})")
+            print(f"{_pad_right('依赖', 16)}: aiohttp {_pkg_version('aiohttp')} / PyYAML {_pkg_version('PyYAML')} / "
                   f"Pillow {_pkg_version('Pillow')} / tqdm {_pkg_version('tqdm')} / "
                   f"requests {_pkg_version('requests')}")
-            print(f"cloudscraper: {'可用' if HAS_CLOUDSCRAPER else '未安装'} | "
+            print(f"{_pad_right('cloudscraper', 16)}: {'可用' if HAS_CLOUDSCRAPER else '未安装'} | "
                   f"yt-dlp: {'可用' if HAS_YTDLP else '未安装'}")
             cur_bin = ""
             if os.path.exists(MIHOMO_DIR):
@@ -562,16 +562,18 @@ async def async_main():
                         cur_bin = os.path.join(MIHOMO_DIR, f)
                         break
             ver = MihomoEngine._get_mihomo_version(cur_bin) if cur_bin else ""
-            print(f"mihomo: {ver or '未安装'}（{cur_bin or '无'}）")
+            print(f"{_pad_right('mihomo', 16)}: {ver or '未安装'}（{cur_bin or '无'}）")
             urls = read_subscribe_urls()
-            print(f"订阅: {len(urls)} 条" + ("（未配置）" if not urls else ""))
-            for d, name in ((OUTPUT_DIR, "报告"), (LOG_DIR, "日志")):
+            print(f"{_pad_right('订阅', 16)}: {len(urls)} 条" + ("（未配置）" if not urls else ""))
+            for d, name in ((OUTPUT_DIR, "报告文件"), (LOG_DIR, "日志文件")):
                 try:
                     n = len(os.listdir(d)) if os.path.isdir(d) else 0
-                    print(f"{name}文件: {n}")
+                    print(f"{_pad_right(name, 16)}: {n}")
                 except OSError:
                     pass
-            print(_current_settings_line())
+            print(f"{_pad_right('当前设置', 16)}: 测速窗口 {load_settings()['speed_window_seconds']}s | "
+                  f"并行 {load_settings()['workers']} | "
+                  f"自动打开报告 {'开' if load_settings()['auto_open_report'] else '关'}")
             print("=" * 50)
             input("\n按 Enter 返回菜单...")
 

@@ -55,7 +55,8 @@ def setup_logging() -> str:
 
     ch = logging.StreamHandler()
     ch.setLevel(logging.INFO)
-    ch.setFormatter(_ConsoleFormatter("%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S"))
+    # v4.18.0：级别固定 8 显示宽（INFO/WARNING/ERROR），消息列对齐
+    ch.setFormatter(_ConsoleFormatter("%(asctime)s %(levelname)-8s %(message)s", datefmt="%H:%M:%S"))
     logger.addHandler(ch)
 
     _install_excepthook()

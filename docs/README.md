@@ -9,7 +9,7 @@
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Downloads](https://img.shields.io/github/downloads/oscyfmau/airport-speedtest/total?style=flat-square)](https://github.com/oscyfmau/airport-speedtest/releases)
 
-版本：v4.17.0 ｜ 仓库：[github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) ｜ [更新记录](CHANGELOG.md)
+版本：v4.18.0 ｜ 仓库：[github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) ｜ [更新记录](CHANGELOG.md)
 
 > 本项目由 AI 编写完成，因个人测速需求而开发，按需取用。
 
@@ -296,7 +296,7 @@ mihomo 内核需要从 GitHub 下载（约 47MB），国内网络可能失败。
 - 流量倍率依赖订阅服务器在响应头返回 `subscription-userinfo`（主流机场面板均支持），且计费流量增量有更新延迟——倍率仅供参考
 - 网页模拟测速会在标准/完整测试中为每个节点额外增加约 3-8 秒（4 站点并发、8 秒超时）；`--fast` 模式跳过
 - TCP 丢包率为 3 次握手的失败计数，对瞬时抖动敏感，仅作参考
-- 平台支持（v4.17.0）：Linux / macOS 未经实测——mihomo 内核自动下载已修复（Windows `.zip` / Linux/macOS `.gz` 格式，x86_64/arm64 架构，下载与解压路径已实测验证）；macOS 手动下载 mihomo 放入 `bin/` 会被 Gatekeeper 拦截（"无法验证开发者"），请用首次运行自动下载或菜单 `6 更新内核`；Linux 无图形界面时报告不会自动打开（`xdg-open` 不存在，不影响测试与手动查看 `output/`），无中文字体时 PNG 报告中文显示为方框（可安装 Noto Sans CJK）
+- 平台支持（v4.18.0）：Linux / macOS 未经实测——mihomo 内核自动下载已修复（Windows `.zip` / Linux/macOS `.gz` 格式，x86_64/arm64 架构，下载与解压路径已实测验证）；macOS 手动下载 mihomo 放入 `bin/` 会被 Gatekeeper 拦截（"无法验证开发者"），请用首次运行自动下载或菜单 `6 更新内核`；Linux 无图形界面时报告不会自动打开（`xdg-open` 不存在，不影响测试与手动查看 `output/`），无中文字体时 PNG 报告中文显示为方框（可安装 Noto Sans CJK）
 
 ### 隐私说明
 

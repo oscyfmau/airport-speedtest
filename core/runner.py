@@ -250,7 +250,8 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
         extra=_ev("parse_done", {"total": len(nodes), "type_counts": type_counts}),
     )
     for n in nodes[:5]:
-        logger.info(f"   - {n.name} ({n.type}://{n.server}:{n.port})")
+        addr = f"{n.type}://{n.server}:{n.port}"
+        logger.info(f"   - {_pad_right(n.name, 32)} {addr:>38}")
     if len(nodes) > 5:
         logger.info(f"   ... 还有 {len(nodes) - 5} 个节点")
 
@@ -570,7 +571,7 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
     if mode != "streaming":
         direct_ok = sum(1 for r in results_dict.values() if r.tcp_ping is not None)
         probe_only = sum(1 for r in results_dict.values() if r.tcp_ping is None and r.tcp_probe)
-        reach_msg = f"可达: 直连 {direct_ok}/{len(nodes)}"
+        reach_msg = f"{_pad_right('可达', 14)}: 直连 {direct_ok}/{len(nodes)}"
         if probe_only:
             reach_msg += f" + 隧道 {probe_only}"
         logger.info(reach_msg)
@@ -579,7 +580,7 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
         if any("解锁" in v or "可用" in v for v in r.streaming.values())
     ) if any(r.streaming for r in results_dict.values()) else -1
     if unlocked >= 0:
-        logger.info(f"流媒体解锁节点: {unlocked}/{len(nodes)}")
+        logger.info(f"{_pad_right('流媒体解锁节点', 14)}: {unlocked}/{len(nodes)}")
     # 同时导出 JSON
     try:
         json_path = export_results_json(list(results_dict.values()), mode,
@@ -588,11 +589,11 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
         logger.exception("JSON 导出失败")
         json_path = ""
 
-    logger.info(f"报告: {img_path}", extra=_ev("report_done", {"path": img_path}))
+    logger.info(f"{_pad_right('报告', 14)}: {img_path}", extra=_ev("report_done", {"path": img_path}))
     if json_path:
-        logger.info(f"数据: {json_path}", extra=_ev("json_export_done", {"path": json_path}))
+        logger.info(f"{_pad_right('数据', 14)}: {json_path}", extra=_ev("json_export_done", {"path": json_path}))
     if _LOG_FILE:
-        logger.info(f"日志: {_LOG_FILE}")
+        logger.info(f"{_pad_right('日志', 14)}: {_LOG_FILE}")
     logger.info("=" * 50)
     try:
         print_console_summary(list(results_dict.values()), sort_by)
