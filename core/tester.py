@@ -169,14 +169,8 @@ async def test_node_speed(mihomo, node: ProxyNode) -> tuple:
     return http_latency, speed, max_speed, per_sec, error_note
 
 
-async def _pbar_ticker(pbar, stop_event: asyncio.Event) -> None:
-    """每秒刷新一次进度条显示（cmd 控制台每秒更新）"""
-    try:
-        while not stop_event.is_set():
-            pbar.refresh()
-            await asyncio.sleep(1.0)
-    except asyncio.CancelledError:
-        pass
+# _pbar_ticker 定义已移至 utils.py（v4.16.0，避免 streaming↔tester 循环导入）；
+# 经 `from .utils import *` 注入本模块，`__all__` 保留该名以维持 `from core.tester import _pbar_ticker` 兼容
 
 
 async def run_speed_test(mihomo: MihomoEngine, nodes: list[ProxyNode],

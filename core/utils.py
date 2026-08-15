@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""通用工具：URL 遮蔽 / 异常安全化 / 编码 / SSL / 显示宽度 / 可选依赖探测"""
+"""通用工具：URL 遮蔽 / 异常安全化 / 编码 / SSL / 显示宽度 / 可选依赖探测 / 进度刷新"""
+import asyncio
 import base64
 import re
 import ssl
@@ -195,4 +196,18 @@ def _sanitize_surrogates(s: str) -> str:
         return s.encode("utf-8", "replace").decode("utf-8")
     return s
 
-__all__ = ['HAS_CLOUDSCRAPER', 'HAS_YTDLP', '_SENSITIVE_PARAMS', '_mask_url', '_URL_IN_TEXT_RE', '_URL_REL_RE', '_safe_exc_str', '_FLAG_PAIR_RE', '_flag_to_text', '_no_verify_ssl', '_remove_prefix', 'b64decode_pad', '_str_width', '_pad_right', '_trunc_width', '_fmt_size', '_sanitize_surrogates']
+
+async def _pbar_ticker(pbar, stop_event: asyncio.Event) -> None:
+    """每秒刷新一次进度条显示（cmd 控制台每秒更新；串行阶段用）
+
+    v4.16.0 起定义在 utils（零依赖层）：tester/streaming/ip_quality/webpage 共用，
+    避免 streaming↔tester 循环导入（v4.10 模块化回归：streaming 等引用未定义名）。
+    """
+    try:
+        while not stop_event.is_set():
+            pbar.refresh()
+            await asyncio.sleep(1.0)
+    except asyncio.CancelledError:
+        pass
+
+__all__ = ['HAS_CLOUDSCRAPER', 'HAS_YTDLP', '_SENSITIVE_PARAMS', '_mask_url', '_URL_IN_TEXT_RE', '_URL_REL_RE', '_safe_exc_str', '_FLAG_PAIR_RE', '_flag_to_text', '_no_verify_ssl', '_remove_prefix', 'b64decode_pad', '_str_width', '_pad_right', '_trunc_width', '_fmt_size', '_sanitize_surrogates', '_pbar_ticker']

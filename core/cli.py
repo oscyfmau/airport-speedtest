@@ -502,33 +502,40 @@ async def async_main():
             print(_current_settings_line())
             print("操作: 1=测速窗口秒数  2=并行数  3=自动打开报告  4=恢复默认  回车=返回")
             act = input(": ").strip()
-            if act == "1":
-                try:
-                    v = int(input(f"测速窗口秒数 (3-30，当前 {load_settings()['speed_window_seconds']}): ").strip())
+            try:
+                if act == "1":
+                    try:
+                        v = int(input(f"测速窗口秒数 (3-30，当前 {load_settings()['speed_window_seconds']}): ").strip())
+                    except ValueError:
+                        print("[错误] 请输入数字")
+                    else:
+                        st = load_settings()
+                        st["speed_window_seconds"] = max(3, min(v, 30))
+                        save_settings(st)
+                        print(f"[OK] 测速窗口: {st['speed_window_seconds']}s（菜单模式生效；--fast 仍为 5s）")
+                elif act == "2":
+                    try:
+                        v = int(input(f"并行数 (1-8，当前 {load_settings()['workers']}): ").strip())
+                    except ValueError:
+                        print("[错误] 请输入数字")
+                    else:
+                        st = load_settings()
+                        st["workers"] = max(1, min(v, 8))
+                        save_settings(st)
+                        print(f"[OK] 并行数: {st['workers']}")
+                elif act == "3":
+                    v = input(f"自动打开报告 [y/N]（当前 {'开' if load_settings()['auto_open_report'] else '关'}）: ").strip().lower()
                     st = load_settings()
-                    st["speed_window_seconds"] = max(3, min(v, 30))
+                    st["auto_open_report"] = v in ("y", "yes")
                     save_settings(st)
-                    print(f"[OK] 测速窗口: {st['speed_window_seconds']}s（菜单模式生效；--fast 仍为 5s）")
-                except ValueError:
-                    print("[错误] 请输入数字")
-            elif act == "2":
-                try:
-                    v = int(input(f"并行数 (1-8，当前 {load_settings()['workers']}): ").strip())
-                    st = load_settings()
-                    st["workers"] = max(1, min(v, 8))
-                    save_settings(st)
-                    print(f"[OK] 并行数: {st['workers']}")
-                except ValueError:
-                    print("[错误] 请输入数字")
-            elif act == "3":
-                v = input(f"自动打开报告 [y/N]（当前 {'开' if load_settings()['auto_open_report'] else '关'}）: ").strip().lower()
-                st = load_settings()
-                st["auto_open_report"] = v in ("y", "yes")
-                save_settings(st)
-                print(f"[OK] 自动打开报告: {'开' if st['auto_open_report'] else '关'}")
-            elif act == "4":
-                reset_settings()
-                print(f"[OK] 已恢复默认: {_current_settings_line()}")
+                    print(f"[OK] 自动打开报告: {'开' if st['auto_open_report'] else '关'}")
+                elif act == "4":
+                    reset_settings()
+                    print(f"[OK] 已恢复默认: {_current_settings_line()}")
+            except OSError as e:
+                # 设置文件写失败（只读/权限/磁盘）不拖垮菜单
+                print(f"[错误] 保存设置失败: {_safe_exc_str(e)}")
+                logger.warning("保存设置失败: %s", _safe_exc_str(e))
             input("\n按 Enter 返回菜单...")
 
         elif choice == "13":
@@ -666,6 +673,8 @@ def main():
         logger.info("再见!")
     except asyncio.CancelledError:
         logger.info("再见!")
+    except EOFError:
+        pass  # 管道输入提前结束（如 echo 1 | python ...）：正常退出，不记异常
     except Exception:
         logger.exception("程序异常退出", extra=_ev("run_exception", {"phase": "main"}))
     finally:

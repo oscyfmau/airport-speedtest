@@ -8,6 +8,24 @@
 
 ---
 
+## v4.16.0
+
+### 修复
+- **v4.10.0 模块化回归：串行路径流媒体/IP/网页检测必崩 NameError**：`streaming.py`/`ip_quality.py`/`webpage.py` 使用 `_pbar_ticker` 但未定义也未导入（`from .engine import *` 不透出该符号），设置并行数=1 或并行池启动失败回退串行时，`run_streaming_test`/`run_ip_quality_test`/`run_webpage_test` 抛 `NameError: name '_pbar_ticker' is not defined`；初修加 `from .tester import _pbar_ticker` 引发循环导入（tester↔streaming），最终把 `_pbar_ticker` 定义下沉至零依赖的 `core/utils.py`（tester 经 `from .utils import *` 获得并保留 `__all__` 中的名字维持 `from core.tester import _pbar_ticker` 兼容）；实测串行解锁检测 1 节点 8 平台正常、并行 pipeline 全链路（流媒体→IP→网页）正常
+- **菜单 12 设置保存失败导致程序崩溃**：`save_settings` 写 `~/.airport_speedtest.json` 失败（只读/权限/磁盘满）抛 OSError 未被捕获，直接"程序异常退出"；现统一捕获并打印 `[错误] 保存设置失败`，菜单不中断
+- **管道输入提前结束被记为异常**：`echo 1 | python core/speed_test.py` 等管道输入耗尽时 `input()` 抛 EOFError，被 main 的兜底记"程序异常退出"（exit 非 0）；现 EOFError 静默正常退出
+
+### 修改
+- （无）
+
+### 新增
+- （无）
+
+### 移除
+- （无）
+
+---
+
 ## v4.15.0
 
 ### 新增
