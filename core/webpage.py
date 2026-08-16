@@ -21,6 +21,7 @@ async def check_one_node_webpage(session: aiohttp.ClientSession, proxy: str,
     """
     urls = WPS_CN_URLS if (ip_info or {}).get("country") == "CN" else WPS_INTERNATIONAL_URLS
     results: dict = {}
+    group = "cn" if urls == WPS_CN_URLS else "intl"
 
     async def one(site: str, url: str) -> None:
         t0 = time.monotonic()
@@ -40,9 +41,11 @@ async def check_one_node_webpage(session: aiohttp.ClientSession, proxy: str,
     # 国际站点全失败（落地 CN 但 IP 检测失败、或线路屏蔽国际站）→ 回退国内站点再测一轮
     if not any(v > 0 for v in results.values()) and urls != WPS_CN_URLS:
         results = {}
+        group = "cn"
         await asyncio.gather(*[one(s, u) for s, u in WPS_CN_URLS])
     ok_vals = [v for v in results.values() if v > 0]
     results["avg_ms"] = round(sum(ok_vals) / len(ok_vals)) if ok_vals else -1
+    results["group"] = group  # v4.27.0：标记实际测的站点组（intl/cn），回退结果可区分
     logger.debug(
         "网页模拟 %s: 均耗 %s ms (%s)", node_name or "-", results["avg_ms"],
         {k: v for k, v in results.items() if k != "avg_ms"},

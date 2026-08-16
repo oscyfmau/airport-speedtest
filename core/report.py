@@ -243,7 +243,9 @@ def print_console_summary(results, sort_by="default", top: int = 5) -> None:
         line = (f"{_pad_right(name, 30)} {_pad_right(ping, 7)} {_pad_right(http, 7)} "
                 f"{_pad_right(avg, 10)} {_pad_right(mx, 10)}")
         if has_stream:
-            un = sum(1 for v in r.streaming.values() if "解锁" in v or "可用" in v)
+            # v4.27.0：类型守卫（streaming 值异常为 None 时小结不再抛 TypeError 静默消失）
+            un = sum(1 for v in r.streaming.values()
+                     if isinstance(v, str) and ("解锁" in v or "可用" in v))
             line += f" {_pad_right(str(un), 5)}"
         if has_ip:
             risk = r.ip_info.get("risk_score")

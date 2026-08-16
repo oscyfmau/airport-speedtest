@@ -8,6 +8,39 @@
 
 ---
 
+## v4.27.0
+
+### 修复
+- **runner.py 可达性判定恒真（P1，影响测速结果正确性）**：`tcp_results` 值为 `(latency, ok)` 元组恒非 None——旧判断 `is None` 使"来源B 隧道探测"candidates 恒空（直连失败节点+UDP 节点从不走隧道互验）、`v is not None` 使所有节点（含直连超时死节点）误判可达并进入 HTTP 测速（每死节点白耗至多 30s）；改为 `(…or (None,0))[0] is None` / `v[0] is not None`（与补测阶段 L430 判定一致）
+- **parser.py tuic/juicity/ssh authority 段密码被丢弃（P1）**：`_parse_uuid_password`/`parse_ssh` 用 `_` 接住 `parsed`，`tuic://uuid:密码@host`/`ssh://用户:密码@host` 的密码丢失（query `password=` 优先，authority 密码兜底）；对照 parse_socks/parse_http 已正确读取
+- **parser.py `_try_fetch` 会话先于流消费关闭（P1）**：finally 里 `scraper.close()` 在 `_read_limited(resp)` 读体之前执行，stream=True 响应可能截断（订阅随机残缺）——会话关闭移到流消费之后；同时补 HTTP 状态码检查（非 2xx 抛错，404/500 错误页不再当正文解析）
+- **parser.py 末次 cloudscraper 兜底绕过体积上限（P2）**：`resp.text` 全量读入 → 改 `_read_limited` 流式读取（仍受 `_SUB_MAX_BYTES` 20MB 限制）
+- **streaming.py ChatGPT 地区封锁误报解锁（P1）**：`favicon 403 + cdn-cgi/trace 有 loc → 解锁(region)` 会把被封地区误报解锁（trace 的 loc 只是 CF 边缘定位，不代表 OpenAI 放行）——403 一律判"封锁"
+- **streaming.py 其余**：netflix 非 200（5xx 瞬时）一律 blocked 不触发重试 → 403/404 才 blocked、其余归"错误"类；bilibili_tw 412 风控 `resp.json()` 抛异常被吞判"失败"（不重试）→ 非 200 归"错误(HTTP x)"触发重试；youtube 非 200 统一"失败(无Premium标识)"掩盖 403 → 暴露真实状态码
+- **ip_quality.py 令牌桶死循环（v4.26.0 引入的 while 重取暴露）**：容量 `min(self._rate, …)` 被 cap 在 0.667 <1，令牌永远凑不齐（v4.26.0 无重取时表现为"假节流"）——容量与速率分离（`_capacity = rate_per_min`），并发等待者醒来后循环重取
+- **runner.py ip_lock 持锁做网络请求（P2）**：坏节点最坏 4源×2次×10s ≈ 80s 持锁阻塞其余 worker → 锁只保护间隔簿记，网络请求移出锁外（配合令牌桶全局节流）
+- **utils.py `_mask_url` 遮蔽旁路（P2）**：`?a=1?token=SECRET` 嵌套 query、`;` 分隔参数、大写 `HTTP://user:pass@` 未遮蔽——嵌套值递归遮蔽、`[&;]` 分割、scheme 正则 IGNORECASE
+- **parser.py YAML 解析错误明文进日志（P2）**：`ScannerError` 的 `str(e)` 含出错行上下文（proxies 段 password/uuid 明文）→ 只记异常类型+行列号
+- **report.py print_console_summary 无类型守卫（P2）**：`"解锁" in v` 遇 None 抛 TypeError 使小结静默消失 → 加 `isinstance(v, str)`
+- **settings.py `bool("false")` 为 True**：字符串 "false"/"0" 手写进配置文件被误判开启自动开报告 → 白名单式解析
+- **utils.py b64decode_pad**：`padding != 4` 恒真死判断、多行 base64 失败 → 清理全部空白 + 移除死判断
+- **parser.py `_looks_like_yaml`**：只认 `proxies:`/`mixed-port`，`port: 7890` 开头合法 YAML 误判 → 补 port:/socks-port:/allow-lan:/proxy-providers:/mode:
+- **cli.py `--workers` 后跟 flag 被吞**：`--workers --full` 中 `--full` 被 skip_next 跳过静默失效 → 参数解析成功才 skip
+- **logging_setup.py excepthook 链式叠加**：setup_logging 多次调用重复写异常日志 → 模块级标记只装一次
+- **parser.py parse_trojan allowInsecure 只认 "true"** → 与 hysteria2/anytls 统一（true/1/yes）
+- **webpage.py 回退结果加 `group` 字段**（intl/cn），区分实际测的站点组
+
+### 修改
+- （无）
+
+### 新增
+- （无）
+
+### 移除
+- （无）
+
+---
+
 ## v4.26.0
 
 ### 修改

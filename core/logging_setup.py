@@ -181,8 +181,19 @@ def _cleanup_empty_log() -> None:
         pass
 
 
+_EXCEPTHOOK_INSTALLED = False
+
+
 def _install_excepthook() -> None:
-    """全局未捕获异常兜底：完整 traceback 写入 JSONL 日志（乱操作也不丢现场），并链式调用既有 hook"""
+    """全局未捕获异常兜底：完整 traceback 写入 JSONL 日志（乱操作也不丢现场），并链式调用既有 hook
+
+    v4.27.0：模块级标记只装一次——setup_logging 多次调用不再链式叠加钩子
+    （旧实现每次调用都包一层，同进程内异常被重复写日志）
+    """
+    global _EXCEPTHOOK_INSTALLED
+    if _EXCEPTHOOK_INSTALLED:
+        return
+    _EXCEPTHOOK_INSTALLED = True
     _old_hook = sys.excepthook
 
     def _hook(tp, val, tb):

@@ -216,7 +216,8 @@ def parse_trojan(uri: str) -> Optional[ProxyNode]:
         if params.get("sni"):
             extra["sni"] = params["sni"][0]
         if params.get("allowInsecure"):
-            extra["skip-cert-verify"] = params["allowInsecure"][0].lower() == "true"
+            # v4.27.0：与 hysteria2/anytls 口径统一（true/1/yes 均算开启）
+            extra["skip-cert-verify"] = params["allowInsecure"][0].lower() in ("true", "1", "yes")
         return ProxyNode(name=name, type="trojan", server=server, port=port, extra=extra)
     except Exception:
         return None
@@ -368,8 +369,12 @@ def parse_hysteria(uri: str) -> Optional[ProxyNode]:
 def _parse_uuid_password(uri: str, type_name: str, allow_insecure: bool) -> Optional[ProxyNode]:
     """解析 UUID/password 型协议（tuic/juicity 共用）"""
     try:
-        user, server, port, params, name, _ = _parse_userhost_port(uri)
-        extra = {"uuid": user, "password": params.get("password", [""])[0]}
+        user, server, port, params, name, parsed = _parse_userhost_port(uri)
+        # v4.27.0：支持 authority 段密码（tuic://uuid:密码@host），query password= 优先
+        pwd = params.get("password", [""])[0]
+        if not pwd and parsed.password:
+            pwd = unquote(parsed.password)
+        extra = {"uuid": user, "password": pwd}
         if params.get("congestion_control"):
             extra["congestion-controller"] = params["congestion_control"][0]
         if params.get("sni"):
@@ -459,10 +464,14 @@ def parse_juicity(uri: str) -> Optional[ProxyNode]:
 def parse_ssh(uri: str) -> Optional[ProxyNode]:
     """解析 ssh://"""
     try:
-        user, server, port, params, name, _ = _parse_userhost_port(uri)
+        user, server, port, params, name, parsed = _parse_userhost_port(uri)
         extra = {"username": user}
-        if params.get("password"):
-            extra["password"] = params["password"][0]
+        # v4.27.0：支持 authority 段密码（ssh://用户:密码@host），query password= 优先
+        pwd = params.get("password", [""])[0]
+        if not pwd and parsed.password:
+            pwd = unquote(parsed.password)
+        if pwd:
+            extra["password"] = pwd
         if params.get("private-key"):
             extra["private-key"] = params["private-key"][0]
         return ProxyNode(name=name, type="ssh", server=server, port=port, extra=extra)
@@ -540,12 +549,18 @@ URI_PATTERN = re.compile(r"(vmess|vless|trojan|ss|ssr|hysteria2?|tuic|anytls|wg|
 
 
 def _looks_like_yaml(text: str) -> bool:
-    """判断内容是否 Clash YAML 配置（容忍注释/空行开头）"""
+    """判断内容是否 Clash YAML 配置（容忍注释/空行开头）
+
+    v4.27.0：补充 port:/socks-port:/allow-lan: 等合法 YAML 顶键（旧实现只认
+    proxies:/mixed-port，以 port: 7890 开头的合法 Clash 配置会被误判为非 YAML）。
+    """
     for line in text.splitlines():
         s = line.strip()
         if not s or s.startswith("#") or s.startswith("//"):
             continue
-        return s.startswith("proxies:") or "mixed-port" in s
+        return (s.startswith("proxies:") or "mixed-port" in s or s.startswith("port:")
+                or s.startswith("socks-port:") or s.startswith("allow-lan:")
+                or s.startswith("proxy-providers:") or s.startswith("mode:"))
     return False
 
 
@@ -603,25 +618,37 @@ def _try_fetch(url: str, ua: str) -> str:
         try:
             resp = _requests.get(url, headers={"User-Agent": ua}, timeout=30, stream=True)
         except Exception as e:
+            if scraper is not None:
+                try:
+                    scraper.close()
+                except Exception:
+                    pass
             raise RuntimeError(f"订阅下载失败: {_safe_exc_str(e)}") from e
+    try:
+        # v4.27.0：非 2xx 视为拉取失败（404/500 错误页不当作正文解析）
+        if getattr(resp, "status_code", 200) >= 400:
+            raise RuntimeError(f"订阅拉取 HTTP {resp.status_code}")
+        # 捕获订阅流量信息（v4.20.0 起流量倍率停用，_SUB_INFO 仅保留接口）：首个带 header 的响应为准
+        try:
+            if not state._SUB_INFO.get(url):
+                info = _parse_userinfo(resp.headers)
+                if info.get("download") is not None:
+                    state._SUB_INFO[url] = info
+        except Exception:
+            pass
+        # v4.27.0：会话关闭移到流消费之后（旧实现 finally 先 close 会话，
+        #   stream=True 响应可能截断）
+        return _read_limited(resp)
     finally:
         if scraper is not None:
             try:
                 scraper.close()
             except Exception:
                 pass
-    # 捕获订阅流量信息（v4.20.0 起流量倍率停用，_SUB_INFO 仅保留接口）：首个带 header 的响应为准
-    try:
-        if not state._SUB_INFO.get(url):
-            info = _parse_userinfo(resp.headers)
-            if info.get("download") is not None:
-                state._SUB_INFO[url] = info
-    except Exception:
-        pass
-    try:
-        return _read_limited(resp)
-    finally:
-        resp.close()
+        try:
+            resp.close()
+        except Exception:
+            pass
 
 
 def parse_subscription_url(url: str) -> list[ProxyNode]:
@@ -657,11 +684,12 @@ def parse_subscription_url(url: str) -> list[ProxyNode]:
         try:
             if HAS_CLOUDSCRAPER and cloudscraper is not None:
                 scraper = cloudscraper.create_scraper()
-                resp = scraper.get(url, timeout=30)
+                # v4.27.0：流式读取并限制体积（旧实现 resp.text 全量读入，
+                # 绕过 _SUB_MAX_BYTES 20MB 上限，恶意端点可耗尽内存）
+                resp = scraper.get(url, timeout=30, stream=True)
             else:
                 raise ImportError("cloudscraper not installed")
-            resp.encoding = "utf-8"
-            best_nodes = parse_subscription_content(resp.text)
+            best_nodes = parse_subscription_content(_read_limited(resp))
         except Exception as e:
             logger.warning("cloudscraper 拉取订阅失败: %s", _safe_exc_str(e))
         finally:
@@ -698,7 +726,14 @@ def parse_subscription_content(content: str) -> list[ProxyNode]:
                     if nodes:
                         return nodes
         except Exception as e:
-            logger.warning("YAML 订阅解析失败，回退逐行解析: %s", _safe_exc_str(e))
+            # v4.27.0：只记异常类型+行列号，不记 str(e)——ScannerError 的文本含
+            # 出错行上下文原文，proxies 段的 password/uuid 明文可能被打进 JSONL 日志
+            loc = ""
+            if isinstance(e, yaml.YAMLError):
+                mark = getattr(e, "problem_mark", None)
+                if mark is not None:
+                    loc = f" 第{mark.line + 1}行"
+            logger.warning("YAML 订阅解析失败%s，回退逐行解析: %s", loc, type(e).__name__)
 
     # 逐行解析 URI
     for line in decoded.splitlines():

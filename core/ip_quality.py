@@ -22,22 +22,27 @@ class _TokenBucket:
 
     def __init__(self, rate_per_min: int):
         self._rate = rate_per_min / 60.0
-        self._tokens = float(rate_per_min)
+        self._capacity = float(rate_per_min)  # 桶容量（突发上限）——必须 ≥1，否则令牌永远凑不齐
+        self._tokens = 1.0  # 初始只给 1 个（避免突发打满 40/分钟上限）
         self._last = 0.0
         self._lock = asyncio.Lock()
 
     async def acquire(self) -> None:
-        async with self._lock:
-            now = time.monotonic()
-            if self._last:
-                self._tokens = min(self._rate, self._tokens + (now - self._last) * self._rate)
-            self._last = now
-            if self._tokens >= 1.0:
-                self._tokens -= 1.0
-                return
-            wait = (1.0 - self._tokens) / self._rate
-            self._tokens = 0.0
-        await asyncio.sleep(wait)
+        while True:
+            async with self._lock:
+                now = time.monotonic()
+                if self._last:
+                    self._tokens = min(self._capacity,
+                                       self._tokens + (now - self._last) * self._rate)
+                self._last = now
+                if self._tokens >= 1.0:
+                    self._tokens -= 1.0
+                    return
+                wait = (1.0 - self._tokens) / self._rate
+                self._tokens = 0.0
+            # v4.27.0：醒来后循环重取——并发等待者会同时醒来，
+            # 旧实现 sleep 完直接放行导致节流失效
+            await asyncio.sleep(wait)
 
 
 _ip_bucket = _TokenBucket(IP_RATE_LIMIT_PER_MIN)

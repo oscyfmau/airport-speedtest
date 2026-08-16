@@ -218,10 +218,11 @@ async def async_main():
                 if i + 1 >= len(args):
                     logger.warning("--workers 缺少参数，使用默认值 %d", DEFAULT_WORKERS)
                 else:
-                    skip_next = i + 1
                     try:
                         workers = max(1, min(int(args[i + 1]), MAX_WORKERS))
+                        skip_next = i + 1
                     except ValueError:
+                        # v4.27.0：后跟非数字（如 --workers --full）时不吞掉该 flag
                         logger.warning("--workers 参数无效: %s，使用默认值", args[i + 1])
             elif arg == "--help" or arg == "-h":
                 print("用法:")

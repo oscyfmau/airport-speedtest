@@ -102,28 +102,30 @@ async def _run_node_pipeline(pool: MihomoWorkerPool, node_tasks: list,
                         _log_streaming_details(node.name, streaming)
                         pbar.set_postfix_str(f"{_flag_to_text(node.name)} 解锁{unlocked}/{len(streaming)}")
 
-                # 2) IP 质量（多源回退 + 全局串行节流）
+                # 2) IP 质量（多源回退 + 全局节流）
                 if do_ip:
                     await asyncio.sleep(0.3)
+                    # 间隔节流（v4.27.0）：仅簿记上锁，网络请求不持锁——
+                    # 坏节点最长 4源×2次×10s ≈ 80s 超时不再阻塞其余 worker
                     async with ip_lock:
                         wait = IP_CHECK_INTERVAL - (time.monotonic() - last_ip_check[0])
                         if wait > 0:
                             await asyncio.sleep(wait)
-                        async with aiohttp.ClientSession(
-                                connector=aiohttp.TCPConnector(ssl=ssl_ctx, force_close=True)) as sess:
-                            ip_info = await check_ip_quality(sess, proxy)
                         last_ip_check[0] = time.monotonic()
-                        if node.name in results_dict:
-                            results_dict[node.name].ip_info = ip_info
-                            curr_ip = ip_info.get("ip", "")
-                            if curr_ip:
-                                if curr_ip in seen_ips:
-                                    results_dict[node.name].ip_info["same_ip_warning"] = True
-                                seen_ips.add(curr_ip)
-                        risk = ip_info.get("risk_score")
-                        risk = "?" if risk is None else risk
-                        _log_ip_details(node.name, ip_info)
-                        pbar.set_postfix_str(f"{_flag_to_text(node.name)} 风险:{risk}%")
+                    async with aiohttp.ClientSession(
+                            connector=aiohttp.TCPConnector(ssl=ssl_ctx, force_close=True)) as sess:
+                        ip_info = await check_ip_quality(sess, proxy)
+                    if node.name in results_dict:
+                        results_dict[node.name].ip_info = ip_info
+                        curr_ip = ip_info.get("ip", "")
+                        if curr_ip:
+                            if curr_ip in seen_ips:
+                                results_dict[node.name].ip_info["same_ip_warning"] = True
+                            seen_ips.add(curr_ip)
+                    risk = ip_info.get("risk_score")
+                    risk = "?" if risk is None else risk
+                    _log_ip_details(node.name, ip_info)
+                    pbar.set_postfix_str(f"{_flag_to_text(node.name)} 风险:{risk}%")
 
                 # 3) 网页模拟测速（依赖 IP 归属选站点；无 IP 数据时用国际站点）
                 if do_web:
@@ -315,7 +317,9 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
             success_tcp = sum(1 for v, _ in tcp_results.values() if v is not None)
 
             # 来源B：直连超时节点 + UDP 节点 → mihomo 隧道并发探测
-            candidates = [n for n in nodes if tcp_results.get(n.name) is None]
+            # （v4.27.0 修复：tcp_results 值为 (latency, ok) 元组恒非 None，
+            #   旧判断 `is None` 导致 candidates 恒空、隧道探测从未执行）
+            candidates = [n for n in nodes if (tcp_results.get(n.name) or (None, 0))[0] is None]
             if candidates and mihomo.binary_path and os.path.isfile(mihomo.binary_path):
                 n_conc = min(TCP_PROBE_CONCURRENCY, len(candidates))
                 logger.info(f"TCP 直连未通 {len(candidates)} 个，启动 mihomo 隧道探测（并发 {n_conc} 路）...")
@@ -335,7 +339,8 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
             step_idx += 1
 
         # 可达性合并：直连成功 或 隧道探测成功（探测池不可用时 UDP 节点按直连语义保留）
-        reachable = {name for name, v in tcp_results.items() if v is not None}
+        # （v4.27.0 修复：旧判断 `v is not None` 对元组恒真 → 死节点全部误判可达）
+        reachable = {name for name, v in tcp_results.items() if v is not None and v[0] is not None}
         if probe_results:
             reachable |= {name for name, v in probe_results.items() if v}
         else:

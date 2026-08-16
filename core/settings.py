@@ -31,7 +31,11 @@ def _clamp(data: dict) -> None:
         data["workers"] = max(1, min(int(data.get("workers", 4)), 8))
     except (TypeError, ValueError):
         data["workers"] = DEFAULTS["workers"]
-    data["auto_open_report"] = bool(data.get("auto_open_report", True))
+    # v4.27.0：字符串 "false"/"0" 不再被 bool("false")=True 误判为开启
+    raw = data.get("auto_open_report", True)
+    if isinstance(raw, str):
+        raw = raw.strip().lower() in ("1", "true", "yes", "on")
+    data["auto_open_report"] = bool(raw)
 
 
 def load_settings() -> dict:

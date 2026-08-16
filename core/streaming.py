@@ -72,7 +72,8 @@ async def check_youtube(session: aiohttp.ClientSession, proxy: str) -> str:
             # 200 但无任何可识别特征（consent/登录墙等变体）→ 至少可达
             if status == 200:
                 return "可用"
-            return "失败(无Premium标识)"
+            # v4.27.0：暴露真实状态码（旧实现统一"失败(无Premium标识)"掩盖 403/风控）
+            return f"失败(HTTP {status})"
     except Exception as e:
         return f"错误({type(e).__name__})"
 
@@ -120,8 +121,10 @@ async def check_netflix(session: aiohttp.ClientSession, proxy: str) -> str:
                     timeout=aiohttp.ClientTimeout(total=STREAMING_TEST_TIMEOUT),
                     allow_redirects=True,
                 ) as r:
+                    if r.status in (403, 404):
+                        return "blocked"  # 区域限制/不存在
                     if r.status != 200:
-                        return "blocked"
+                        return "error"    # v4.27.0：5xx 等瞬时错误归"错误"类（触发重试一次）
                     t = await r.text()
                     if "Not Available" in t or "not available" in t:
                         return "blocked"
@@ -225,22 +228,22 @@ async def check_chatgpt(session: aiohttp.ClientSession, proxy: str) -> str:
                 region = line[4:].strip()
                 break
 
-        # favicon 403 + trace 有地区 → CF 拦截了路径但能通
-        if status2 == 403 and region:
-            return f"解锁({region})"
+        # favicon 403：CF 拦截（地区封锁/风控）——v4.27.0 修复：
+        # 旧逻辑"403 + trace 有 loc → 解锁(region)"会把被封地区误报为解锁
+        # （cdn-cgi/trace 的 loc 只是 CF 边缘对出口 IP 的地理定位，不代表 OpenAI 放行）
+        if status2 == 403:
+            return "封锁"
         # trace 有地区 → 能通
         if region:
             return f"解锁({region})"
         # 全部失败
-        if status2 == 403:
-            return "封锁"
         return "错误(连接失败)"
     except Exception as e:
         return f"错误({type(e).__name__})"
 
 
 async def check_generic(session: aiohttp.ClientSession, proxy: str, url: str, name: str) -> str:
-    """通用检测（跟进重定向，允许 3xx 也算可用）
+    """通用检测（跟进重定向，最终 2xx/3xx 算可用；4xx/5xx 走 403 特判或按状态码返回）
 
     403 判定（v4.14.0 收紧）：先查挑战页特征（Cloudflare/JS 挑战/人机验证等变体）→ 封锁；
     再查页面 title 是否含平台名（挑战页 title 为 "Just a moment..." 等，不匹配）→ 可用；
@@ -319,6 +322,10 @@ async def check_bilibili_tw(session: aiohttp.ClientSession, proxy: str) -> str:
                     proxy=proxy, headers=headers,
                     timeout=aiohttp.ClientTimeout(total=STREAMING_TEST_TIMEOUT),
                 ) as resp:
+                    # v4.27.0：非 200（412 风控等）归"错误"类 → 触发重试一次，
+                    # 旧实现 resp.json() 抛异常被吞 → 瞬时风控被永久判"失败"
+                    if resp.status != 200:
+                        return f"错误(HTTP {resp.status})"
                     data = await resp.json()
                 code = data.get("code", -1)
                 msg = str(data.get("message", ""))

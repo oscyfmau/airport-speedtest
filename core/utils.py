@@ -33,7 +33,20 @@ _SENSITIVE_PARAMS = {"token", "password", "passwd", "key", "secret", "auth",
                      "secret_key", "private_key", "client_secret",
                      "session", "sessionid", "cookie"}
 
-_AUTH_INFO_RE = re.compile(r"^(https?://)([^/@]+)@")
+_AUTH_INFO_RE = re.compile(r"^(https?://)([^/@]+)@", re.IGNORECASE)  # v4.27.0：兼容大写 scheme
+
+
+def _mask_value_query(v: str) -> str:
+    """遮蔽值内嵌套的 query/分号参数（v4.27.0：如 ?a=1?token=SECRET 的 value "1?token=SECRET"）"""
+    sep = "?" if "?" in v else ";"
+    parts = v.split(sep)
+    for i in range(1, len(parts)):
+        seg = parts[i]
+        if "=" in seg:
+            k, _ = seg.split("=", 1)
+            if k.lower() in _SENSITIVE_PARAMS:
+                parts[i] = f"{k}=***"
+    return sep.join(parts)
 
 
 def _mask_url(url: str) -> str:
@@ -60,11 +73,13 @@ def _mask_url(url: str) -> str:
     if not qs:
         return base
     parts = []
-    for p in qs.split("&"):
+    for p in re.split(r"[&;]", qs):  # v4.27.0：";" 分隔参数一并处理
         if "=" in p:
             k, v = p.split("=", 1)
             if k.lower() in _SENSITIVE_PARAMS:
                 v = "***"
+            elif "?" in v or ";" in v:
+                v = _mask_value_query(v)
             parts.append(f"{k}={v}")
         else:
             parts.append(p)
@@ -125,13 +140,11 @@ def _remove_prefix(s: str, prefix: str) -> str:
 
 
 def b64decode_pad(s: str) -> bytes:
-    """Base64 解码，自动处理 padding"""
-    s = s.strip()
+    """Base64 解码，自动处理 padding（v4.27.0：清理全部空白，支持多行 base64）"""
+    s = re.sub(r"\s+", "", s)
     # 处理 URL-safe base64
     s = s.replace('-', '+').replace('_', '/')
-    padding = (4 - len(s) % 4) % 4
-    if padding != 4:
-        s += '=' * padding
+    s += '=' * ((4 - len(s) % 4) % 4)
     return base64.b64decode(s)
 
 
