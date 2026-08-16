@@ -262,11 +262,32 @@ def print_console_summary(results, sort_by="default", top: int = 5) -> None:
         print(f"... 共 {len(ranked)} 个节点，完整结果见报告")
 
 
-def export_results_json(results: list[TestResult], mode: str, display_mode: str = None) -> str:
-    """导出测试结果为 JSON 文件（display_mode 为原始模式名，用于文件名与 mode 字段）"""
+def _new_report_timestamp() -> str:
+    """生成本次运行共享的报告时间戳（PNG/JSON 同名配对）
+
+    v4.29.0：秒级 + 同秒冲突加毫秒后缀（与 new_run_log 同策略），
+    且 PNG 与 JSON 必须共用同一个值——run 收尾生成一次传入两个导出函数，
+    同时修复旧实现各自取秒级时间戳的跨秒配对竞态。
+    """
+    base = time.strftime("%Y%m%d_%H%M%S")
+    try:
+        names = os.listdir(OUTPUT_DIR)
+    except OSError:
+        names = []
+    if any(base in n for n in names):
+        base += f"_{int(time.monotonic() * 1000) % 1000:03d}"
+    return base
+
+
+def export_results_json(results: list[TestResult], mode: str, display_mode: str = None,
+                        report_ts: str = None, run_bytes: int = None) -> str:
+    """导出测试结果为 JSON 文件（display_mode 为原始模式名，用于文件名与 mode 字段）
+
+    report_ts 为本次运行共享时间戳（缺省时函数内部生成，兼容直接调用）。
+    """
     display_mode = display_mode or mode
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    ts = time.strftime("%Y%m%d_%H%M%S")
+    ts = report_ts or _new_report_timestamp()
     fpath = os.path.join(OUTPUT_DIR, f"测速结果_{display_mode}_{ts}.json")
 
     data = []
@@ -293,20 +314,27 @@ def export_results_json(results: list[TestResult], mode: str, display_mode: str 
         data.append(entry)
 
     with open(fpath, "w", encoding="utf-8") as f:
-        json.dump({
+        top = {
             "mode": display_mode,
             "export_time": time.strftime("%Y-%m-%d %H:%M:%S"),
             "version": VERSION,
             "results": data,
-        }, f, ensure_ascii=False, indent=2, allow_nan=False)  # allow_nan=False：NaN/Infinity 不写出非法 JSON
+        }
+        if run_bytes is not None:
+            top["run_bytes"] = int(run_bytes)  # v4.29.0：本次实测下载字节
+        json.dump(top, f, ensure_ascii=False, indent=2, allow_nan=False)  # allow_nan=False：NaN/Infinity 不写出非法 JSON
     return fpath
 
 
-def generate_report_image(results, mode, total_time, sort_by="default", display_mode=None):
-    """生成 PNG 报告：mode 驱动列布局，display_mode 驱动文件名与页眉"""
+def generate_report_image(results, mode, total_time, sort_by="default", display_mode=None,
+                          report_ts: str = None, run_bytes: int = None):
+    """生成 PNG 报告：mode 驱动列布局，display_mode 驱动文件名与页眉
+
+    report_ts 为本次运行共享时间戳（缺省时函数内部生成，兼容直接调用）。
+    """
     display_mode = display_mode or mode
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    ts = time.strftime("%Y%m%d_%H%M%S")
+    ts = report_ts or _new_report_timestamp()
     fpath = os.path.join(OUTPUT_DIR, f"测速结果_{display_mode}_{ts}.png")
     if not results:
         img = Image.new("RGB", (800, 200), "white")
@@ -501,6 +529,8 @@ def generate_report_image(results, mode, total_time, sort_by="default", display_
     tz_name = time.strftime("%Z") or "本地时间"
     ftr3 = (f"测试时间: {time.strftime('%Y-%m-%d %H:%M:%S')} ({tz_name})"
             f" | Powered by speed_test.py v{VERSION}")
+    if run_bytes is not None and mode != "streaming":
+        ftr3 += f" | 本次实测下载 {_fmt_size(run_bytes)}"  # v4.29.0：页脚流量显示
     if len(results) > max_rows:
         ftr3 += f" | 仅显示前 {max_rows}/{len(results)} 节点"
     dr.text((pad, y), ftr1, fill=dg, font=fsm)
@@ -514,4 +544,4 @@ def generate_report_image(results, mode, total_time, sort_by="default", display_
         img.close()
     return fpath
 
-__all__ = ['_get_speed_color', '_bar_color', '_bar_color_rel', '_fmt_ms', '_fmt_mb', '_fmt_ss', '_font', '_ctxt', 'sort_results', 'print_console_summary', 'export_results_json', 'generate_report_image']
+__all__ = ['_get_speed_color', '_bar_color', '_bar_color_rel', '_fmt_ms', '_fmt_mb', '_fmt_ss', '_font', '_ctxt', 'sort_results', 'print_console_summary', 'export_results_json', 'generate_report_image', '_new_report_timestamp']

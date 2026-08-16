@@ -17,7 +17,9 @@ from .ip_quality import *
 from .logging_setup import *
 from .models import *
 from .parser import *
+from .profiles import append_run  # v4.29.0：节点档案归档（收尾调用，无循环依赖）
 from .report import *
+from .settings import load_settings  # v4.29.0：大流量确认开关
 from .streaming import *
 from .tester import *
 from .utils import *
@@ -31,20 +33,24 @@ def _finish_partial(results_dict: dict, mode: str, display_mode: str,
         extra=_ev("run_end", {"completed": False, "partial": True, "reason": "interrupted",
                               "nodes": len(results_dict)}))
     _mark_reuse(list(results_dict.values()))  # 复用检测四档（无 IP 数据时空转）
+    report_ts = _new_report_timestamp()  # v4.29.0：PNG/JSON 共享时间戳（毫秒防同秒覆盖）
+    run_bytes = int(state._RUN_BYTES)
     img_path = ""
     try:
         img_path = generate_report_image(
             list(results_dict.values()), mode, time.monotonic() - t_start, sort_by,
-            display_mode=display_mode,
+            display_mode=display_mode, report_ts=report_ts, run_bytes=run_bytes,
         )
     except Exception:
         logger.exception("报告图片生成失败，仅导出 JSON 数据")
     try:
         json_path = export_results_json(list(results_dict.values()), mode,
-                                        display_mode=display_mode)
+                                        display_mode=display_mode,
+                                        report_ts=report_ts, run_bytes=run_bytes)
     except Exception as e:
         logger.warning("JSON 导出失败: %s", _safe_exc_str(e))
         json_path = ""
+    append_run(list(results_dict.values()), mode, display_mode, report_ts, json_path)  # v4.29.0：节点档案归档
     if img_path:
         logger.info(f"报告已生成: {img_path}")
     if json_path:
@@ -250,6 +256,21 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
             return ""
         logger.info("节点筛选: %d → %d 个%s", orig_n, len(nodes),
                     f"（关键字: {node_filter}）" if node_filter else f"（前 {node_limit} 个）")
+
+    # v4.29.0：测前流量预估（仅测速类模式；流媒体-only 不下载大流量）
+    if mode not in ("streaming", "streaming_ai", "streaming_all"):
+        est_lo = _fmt_size(len(nodes) * 10 * 1024 * 1024)
+        est_hi = _fmt_size(len(nodes) * 30 * 1024 * 1024)
+        print(f"预计下载约 {est_lo}-{est_hi}（{len(nodes)} 节点）")
+        if len(nodes) > 50 and load_settings().get("confirm_large_run", True):
+            try:
+                input("节点较多，回车继续 / Ctrl+C 取消: ")
+            except KeyboardInterrupt:
+                logger.warning("用户取消大流量测试", extra=_ev("run_end",
+                             {"completed": False, "reason": "cancelled_large_run", "nodes": len(nodes)}))
+                return ""
+            except EOFError:
+                pass  # 管道输入：无交互，直接继续
 
     type_counts = {}
     for n in nodes:
@@ -568,13 +589,15 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
     phase = "生成报告"
     total_time = time.monotonic() - t_start
     _mark_reuse(list(results_dict.values()))  # 复用检测四档（依赖 IP 数据，无则空转）
+    report_ts = _new_report_timestamp()  # v4.29.0：PNG/JSON 共享时间戳（毫秒防同秒覆盖）
+    run_bytes = int(state._RUN_BYTES)
     logger.info("=" * 50)
     logger.info("生成报告...")
     logger.info("=" * 50)
     try:
         img_path = generate_report_image(
             list(results_dict.values()), mode, total_time, sort_by,
-            display_mode=output_mode,
+            display_mode=output_mode, report_ts=report_ts, run_bytes=run_bytes,
         )
     except Exception:
         logger.exception("报告图片生成失败，仅导出 JSON 数据")
@@ -606,10 +629,13 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
     # 同时导出 JSON
     try:
         json_path = export_results_json(list(results_dict.values()), mode,
-                                        display_mode=output_mode)
+                                        display_mode=output_mode,
+                                        report_ts=report_ts, run_bytes=run_bytes)
     except Exception:
         logger.exception("JSON 导出失败")
         json_path = ""
+
+    append_run(list(results_dict.values()), mode, output_mode, report_ts, json_path)  # v4.29.0：节点档案归档
 
     logger.info(f"{_pad_right('报告', 14)}: {img_path}", extra=_ev("report_done", {"path": img_path}))
     if json_path:

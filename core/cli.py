@@ -4,6 +4,7 @@
 import asyncio
 import atexit
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -15,6 +16,7 @@ from .engine import *
 from .logging_setup import *
 from .parser import *
 from .procs import *
+from .profiles import *  # v4.29.0：节点档案库（节点稳定性菜单）
 from .runner import *
 from .settings import *
 from .utils import *
@@ -45,6 +47,19 @@ _MODE_NAMES = {"speed": "简单测速", "basic": "简单测速", "normal": "标�
                "full": "完整测速", "streaming": "流媒体", "streaming_ai": "AI流媒体",
                "streaming_all": "全部流媒体"}
 
+# v4.29.0：文件名时间戳可能是秒级或带毫秒后缀（_mmm），剥掉尾部时间戳段取模式名
+_MODE_TAIL_RE = re.compile(r"_\d{8}_\d{6}(?:_\d+)?$")
+
+
+def _mode_from_basename(base: str) -> str:
+    """测速结果_<mode>_<ts>[.png/.json] → 模式显示名（未知返回空串；兼容含扩展名）"""
+    if not base.startswith("测速结果_"):
+        return ""
+    rest = base[len("测速结果_"):]
+    rest = os.path.splitext(rest)[0]  # 去掉 .png/.json（调用方可能带扩展名）
+    rest = _MODE_TAIL_RE.sub("", rest)
+    return _MODE_NAMES.get(rest, "")
+
 
 def _last_run_line(last_result_path: str = "") -> str:
     """上次结果摘要行：优先本次会话结果，否则 output/ 最新 PNG"""
@@ -57,9 +72,7 @@ def _last_run_line(last_result_path: str = "") -> str:
     if not target:
         return "上次结果: 无"
     base = os.path.basename(target)
-    mode = ""
-    if base.startswith("测速结果_"):
-        mode = _MODE_NAMES.get(base[len("测速结果_"):].rsplit("_", 2)[0], "")
+    mode = _mode_from_basename(base)  # v4.29.0：兼容毫秒后缀时间戳
     try:
         mt = time.strftime("%m-%d %H:%M", time.localtime(os.path.getmtime(target)))
     except OSError:
@@ -157,36 +170,438 @@ def _current_settings_line() -> str:
             f"并行 {st['workers']} | 自动打开报告 {'开' if st['auto_open_report'] else '关'}")
 
 
-def show_menu(last_result_path: str = ""):
-    """显示交互菜单"""
+def show_menu(last_result_path: str = "", level: str = "main"):
+    """显示交互菜单（v4.29.0 三级：main=一级 / more=二级 / maint=三级维护）"""
     subprocess.call("cls" if sys.platform == "win32" else "clear", shell=True)
+    if level == "main":
+        lines = ["1. 标准测试", "2. 下载速度", "3. AI 网站", "4. 所有流媒体",
+                 "5. 快速检测(开发中)", "6. 更多", "0. 退出"]
+    elif level == "more":
+        lines = ["1. 节点稳定性", "2. 结果对比(开发中)", "3. 订阅分组对比(开发中)",
+                 "4. 节点筛选测速", "5. 查看上次结果", "6. 结果管理",
+                 "7. 订阅管理", "8. 设置", "9. 维护", "0. 返回"]
+    else:  # maint
+        lines = ["1. 更新 mihomo 内核", "2. 环境信息",
+                 "3. 清理旧报告(开发中)", "0. 返回"]
     print("╔════════════════════════════════╗")
     # 菜单每行内容宽度（不含边框）固定为 32 个字符宽度
     title = "机场测速工具 v" + VERSION
     title_pad = 32 - _str_width(title)
     print(f"║{' ' * (title_pad // 2)}{title}{' ' * (title_pad - title_pad // 2)}║")
     print("╠════════════════════════════════╣")
-    print(f"║ {_pad_right('1. 简单测速', 31)}║")
-    print(f"║ {_pad_right('2. 标准测试', 31)}║")
-    print(f"║ {_pad_right('3. AI流媒体', 31)}║")
-    print(f"║ {_pad_right('4. 全部流媒体', 31)}║")
-    print(f"║ {_pad_right('5. 查看上次结果', 31)}║")
-    print(f"║ {_pad_right('6. 更新 mihomo 内核', 31)}║")
-    print(f"║ {_pad_right('7. 退出', 31)}║")
-    print(f"║ {_pad_right('8. 快速测速(5s/跳过IP)', 31)}║")
-    print("╠════════════════════════════════╣")
-    print(f"║ {_pad_right('9. 节点筛选测速', 31)}║")
-    print(f"║ {_pad_right('10. 结果管理', 31)}║")
-    print(f"║ {_pad_right('11. 订阅管理', 31)}║")
-    print(f"║ {_pad_right('12. 设置', 31)}║")
-    print(f"║ {_pad_right('13. 环境信息', 31)}║")
+    for line in lines:
+        print(f"║ {_pad_right(line, 31)}║")
     print("╚════════════════════════════════╝")
     # 状态行（菜单重绘时刷新）
     urls = read_subscribe_urls()
     sub_txt = f"订阅文件: 已配置 ({len(urls)} 条)" if urls else "订阅文件: 未配置（测试时需手动输入 URL）"
     print(sub_txt)
     print(_last_run_line(last_result_path))
-    print("提示: 回车=重绘菜单 · 连续两次 Ctrl+C=退出")
+    if level == "main":
+        print("提示: 回车=重绘菜单 · 连续两次 Ctrl+C=退出")
+    else:
+        print("提示: 回车=重绘菜单 · Ctrl+C=返回上级")
+
+
+def _invalid_choice(choice: str) -> None:
+    """菜单无效选择统一处理（空回车=重绘，直接返回）"""
+    if not choice:
+        return
+    print("无效选择")
+    logger.warning("无效菜单选择: %s", choice,
+                   extra=_ev("invalid_input", {"choice": choice}))
+    input("\n按 Enter 继续...")
+
+
+def _menu_choose_sort() -> str:
+    """排序方式选择（测速类入口共用），返回 sort_by"""
+    print("\n排序方式：")
+    print("  1. 订阅顺序")
+    print("  2. 最大速度 降序 ⬅ 默认")
+    print("  3. 最大速度 升序")
+    print("  4. 平均速度 降序")
+    print("  5. 平均速度 升序")
+    print("  6. 节点名 A→Z")
+    print("  7. 节点名 Z→A")
+    sort_choice = input("请选择 [1-7] (默认2): ").strip()
+    sort_map = {"1": "none", "2": "max_desc", "3": "max_asc",
+                "4": "avg_desc", "5": "avg_asc",
+                "6": "name_asc", "7": "name_desc"}
+    return sort_map.get(sort_choice, "max_desc")
+
+
+async def _menu_run_flow(mode: str, fast: bool = False, node_filter: str = "",
+                         node_limit: int = 0, allow_manual: bool = True) -> str:
+    """测速类入口共用：收集订阅 → 排序选择 → run_test → 自动打开报告 → 返回结果路径"""
+    urls = read_subscribe_urls()
+    if not urls:
+        if not allow_manual:
+            print("[错误] 未找到 代理.txt")
+            input("\n按 Enter 返回菜单...")
+            return ""
+        manual = input("未找到 代理.txt，请输入订阅URL: ").strip()
+        logger.debug(
+            "手动输入订阅URL",
+            extra=_ev("manual_subscribe_input",
+                      {"url": _mask_url(manual) if manual else ""}))
+        if manual:
+            urls = [manual]
+            try:
+                save = input("保存该订阅 URL 到 代理.txt 吗？[y/N]: ").strip().lower()
+            except KeyboardInterrupt:
+                save = ""
+            if save in ("y", "yes"):
+                msg = _append_subscribe_url(manual)
+                print(f"[信息] {msg}")
+                if msg == "已添加":
+                    logger.info("订阅 URL 已保存到 代理.txt",
+                                extra=_ev("manual_subscribe_input",
+                                          {"url": _mask_url(manual), "saved": True}))
+                else:
+                    logger.info("订阅 URL 未保存: %s", msg,
+                                extra=_ev("manual_subscribe_input",
+                                          {"url": _mask_url(manual), "saved": False}))
+        else:
+            return ""
+    else:
+        urls = _select_subscribe_urls(urls)  # 多条订阅手动选择
+        if not urls:
+            return ""  # 用户取消 → 回菜单
+    sort_by = _menu_choose_sort()
+    st = load_settings()
+    last_result_path = await run_test(urls, mode, sort_by, fast=fast,
+                                      workers=st.get("workers", DEFAULT_WORKERS),
+                                      node_filter=node_filter, node_limit=node_limit,
+                                      window_seconds=0 if fast else st.get("speed_window_seconds", 0))
+    if last_result_path and os.path.exists(last_result_path) and st.get("auto_open_report", True):
+        _open_report(last_result_path)
+    input("\n按 Enter 返回菜单...")
+    return last_result_path
+
+
+async def _menu_filtered_run() -> str:
+    """节点筛选测速（旧菜单 9）：关键字（任一匹配）或前 N 个"""
+    filt = input("筛选（节点名关键字，如 香港 JP；N=10 只测前10个；回车=全部）: ").strip()
+    node_filter = ""
+    node_limit = 0
+    if filt.upper().startswith("N="):
+        try:
+            node_limit = max(1, int(filt[2:]))
+        except ValueError:
+            print("[错误] 数量格式无效（示例: N=10）")
+            input("\n按 Enter 返回菜单...")
+            return ""
+    else:
+        node_filter = filt
+    print("模式: 1.简单测速  2.标准测试  5.快速测速")
+    mode_choice = input("请选择 [1/2/5] (默认1): ").strip()
+    fast = mode_choice == "5"
+    mode = "normal" if mode_choice == "2" else "speed"
+    return await _menu_run_flow(mode, fast=fast, node_filter=node_filter,
+                                node_limit=node_limit, allow_manual=False)
+
+
+def _menu_view_last(last_result_path: str) -> None:
+    """查看上次结果：优先本次会话结果，否则 output 最新 PNG"""
+    target = last_result_path if last_result_path and os.path.exists(last_result_path) else ""
+    if not target and os.path.exists(OUTPUT_DIR):
+        pngs = [f for f in os.listdir(OUTPUT_DIR) if f.endswith(".png")]
+        if pngs:
+            latest = max(pngs, key=lambda f: os.path.getmtime(os.path.join(OUTPUT_DIR, f)))
+            target = os.path.join(OUTPUT_DIR, latest)
+    if target:
+        _open_report(target)
+    else:
+        print("暂无结果文件")
+    input("\n按 Enter 返回菜单...")
+
+
+def _menu_manage_results() -> None:
+    """结果管理（旧菜单 10）：最近报告，编号打开 / D+编号删除"""
+    reports = _list_reports()
+    if not reports:
+        print("output 目录暂无报告")
+    else:
+        print("最近报告（输入编号=打开，D+编号=删除，回车=返回）：")
+        for i, (base, files) in enumerate(reports, 1):
+            fp = os.path.join(OUTPUT_DIR, base + ".png")
+            if not os.path.exists(fp):
+                fp = os.path.join(OUTPUT_DIR, files[0])
+            try:
+                mt = time.strftime("%m-%d %H:%M", time.localtime(os.path.getmtime(fp)))
+            except OSError:
+                mt = "?"
+            mode = _mode_from_basename(base)  # v4.29.0：兼容毫秒后缀时间戳
+            print(f"  {i:>2}. {mt} {_pad_right(mode, 10)} {base}")
+        act = input("操作: ").strip().upper()
+        if act:
+            try:
+                if act.startswith("D"):
+                    idx = int(act[1:])
+                    base, files = reports[idx - 1]
+                    for f in files:
+                        try:
+                            os.remove(os.path.join(OUTPUT_DIR, f))
+                        except OSError:
+                            pass
+                    print(f"[OK] 已删除: {base}（{len(files)} 个文件）")
+                else:
+                    idx = int(act)
+                    base, files = reports[idx - 1]
+                    pngs = [f for f in files if f.endswith(".png")]
+                    _open_report(os.path.join(OUTPUT_DIR, pngs[0] if pngs else files[0]))
+            except (ValueError, IndexError):
+                print("[错误] 无效编号")
+    input("\n按 Enter 返回菜单...")
+
+
+def _menu_manage_subs() -> None:
+    """订阅管理（旧菜单 11）：遮蔽显示 / 添加 / 删除 / 打开文件编辑"""
+    while True:
+        urls = read_subscribe_urls()
+        print("\n当前订阅 URL（已遮蔽显示）：")
+        if not urls:
+            print("  （空）")
+        for i, u in enumerate(urls, 1):
+            print(f"  {i:>2}. {_mask_url(u)}")
+        print("操作: A=添加  D+编号=删除  O=打开文件编辑  回车=返回")
+        act = input(": ").strip().upper()
+        if not act:
+            break
+        if act == "A":
+            new_u = input("输入订阅 URL: ").strip()
+            if not new_u:
+                continue
+            msg = _append_subscribe_url(new_u)
+            print(f"[信息] {msg}")
+            if msg == "已添加":
+                logger.info("订阅 URL 已添加",
+                            extra=_ev("manual_subscribe_input",
+                                      {"url": _mask_url(new_u), "added": True}))
+        elif act == "O":
+            if os.path.exists(SUBSCRIBE_FILE):
+                _open_report(SUBSCRIBE_FILE)
+            else:
+                print("[错误] 代理.txt 不存在")
+        elif act.startswith("D"):
+            try:
+                idx = int(act[1:]) - 1
+                if 0 <= idx < len(urls):
+                    target = urls[idx]
+                    # 菜单显示行（非空非注释）→ 原始行号映射；逐行原样保留（newline=""）
+                    with open(SUBSCRIBE_FILE, "r", encoding="utf-8-sig", newline="") as fr:
+                        raw_lines = fr.readlines()
+                    clean_idx = [i for i, l in enumerate(raw_lines)
+                                 if l.strip() and not l.strip().startswith("#")]
+                    del_raw = clean_idx[idx]
+                    rest_lines = [l for i, l in enumerate(raw_lines) if i != del_raw]
+                    with open(SUBSCRIBE_FILE, "w", encoding="utf-8", newline="") as f:
+                        f.write("".join(rest_lines))
+                    print(f"[OK] 已删除第 {idx + 1} 条")
+                    logger.info("订阅 URL 已删除",
+                                extra=_ev("manual_subscribe_input",
+                                          {"url": _mask_url(target), "deleted": True}))
+                else:
+                    print("[错误] 编号超出范围")
+            except (ValueError, IndexError):
+                print("[错误] 无效编号")
+        else:
+            print("[错误] 无效操作")
+
+
+def _menu_settings() -> None:
+    """设置（旧菜单 12 + v4.29.0 稳定性窗口/大流量确认）"""
+    print(_current_settings_line())
+    print("操作: 1=测速窗口秒数  2=并行数  3=自动打开报告  4=恢复默认  "
+          "5=稳定性窗口  6=大流量确认  回车=返回")
+    act = input(": ").strip()
+    try:
+        if act == "1":
+            try:
+                v = int(input(f"测速窗口秒数 (3-30，当前 {load_settings()['speed_window_seconds']}): ").strip())
+            except ValueError:
+                print("[错误] 请输入数字")
+            else:
+                st = load_settings()
+                st["speed_window_seconds"] = max(3, min(v, 30))
+                save_settings(st)
+                print(f"[OK] 测速窗口: {st['speed_window_seconds']}s（菜单模式生效；--fast 仍为 5s）")
+        elif act == "2":
+            try:
+                v = int(input(f"并行数 (1-8，当前 {load_settings()['workers']}): ").strip())
+            except ValueError:
+                print("[错误] 请输入数字")
+            else:
+                st = load_settings()
+                st["workers"] = max(1, min(v, 8))
+                save_settings(st)
+                print(f"[OK] 并行数: {st['workers']}")
+        elif act == "3":
+            v = input(f"自动打开报告 [y/N]（当前 {'开' if load_settings()['auto_open_report'] else '关'}）: ").strip().lower()
+            st = load_settings()
+            st["auto_open_report"] = v in ("y", "yes")
+            save_settings(st)
+            print(f"[OK] 自动打开报告: {'开' if st['auto_open_report'] else '关'}")
+        elif act == "4":
+            reset_settings()
+            print(f"[OK] 已恢复默认: {_current_settings_line()}")
+        elif act == "5":
+            v = input(f"稳定性窗口 近N次 (5/10/20，当前 {load_settings()['stability_window']}): ").strip()
+            if v not in ("5", "10", "20"):
+                print("[错误] 只支持 5/10/20")
+            else:
+                st = load_settings()
+                st["stability_window"] = int(v)
+                save_settings(st)
+                print(f"[OK] 稳定性窗口: 近 {st['stability_window']} 次")
+        elif act == "6":
+            v = input(f"大流量确认(>50节点) [y/N]（当前 {'开' if load_settings()['confirm_large_run'] else '关'}）: ").strip().lower()
+            st = load_settings()
+            st["confirm_large_run"] = v in ("y", "yes")
+            save_settings(st)
+            print(f"[OK] 大流量确认: {'开' if st['confirm_large_run'] else '关'}")
+    except OSError as e:
+        # 设置文件写失败（只读/权限/磁盘）不拖垮菜单
+        print(f"[错误] 保存设置失败: {_safe_exc_str(e)}")
+        logger.warning("保存设置失败: %s", _safe_exc_str(e))
+    input("\n按 Enter 返回菜单...")
+
+
+def _menu_env_info() -> None:
+    """环境信息（旧菜单 13）：版本/依赖/mihomo/订阅/文件统计（标签列统一 16 显示宽对齐）"""
+    print("=" * 50)
+    print(f"{_pad_right('工具版本', 16)}: v{VERSION}")
+    print(f"{_pad_right('Python', 16)}: {sys.version.split()[0]} ({sys.platform})")
+    print(f"{_pad_right('依赖', 16)}: aiohttp {_pkg_version('aiohttp')} / PyYAML {_pkg_version('PyYAML')} / "
+          f"Pillow {_pkg_version('Pillow')} / tqdm {_pkg_version('tqdm')} / "
+          f"requests {_pkg_version('requests')}")
+    print(f"{_pad_right('cloudscraper', 16)}: {'可用' if HAS_CLOUDSCRAPER else '未安装'} | "
+          f"yt-dlp: {'可用' if HAS_YTDLP else '未安装'}")
+    cur_bin = ""
+    if os.path.exists(MIHOMO_DIR):
+        for f in os.listdir(MIHOMO_DIR):
+            if f.startswith("mihomo") and (f.endswith(".exe") or "." not in f):
+                cur_bin = os.path.join(MIHOMO_DIR, f)
+                break
+    ver = MihomoEngine._get_mihomo_version(cur_bin) if cur_bin else ""
+    print(f"{_pad_right('mihomo', 16)}: {ver or '未安装'}（{cur_bin or '无'}）")
+    urls = read_subscribe_urls()
+    print(f"{_pad_right('订阅', 16)}: {len(urls)} 条" + ("（未配置）" if not urls else ""))
+    for d, name in ((OUTPUT_DIR, "报告文件"), (LOG_DIR, "日志文件")):
+        try:
+            n = len(os.listdir(d)) if os.path.isdir(d) else 0
+            print(f"{_pad_right(name, 16)}: {n}")
+        except OSError:
+            pass
+    print(f"{_pad_right('当前设置', 16)}: 测速窗口 {load_settings()['speed_window_seconds']}s | "
+          f"并行 {load_settings()['workers']} | "
+          f"自动打开报告 {'开' if load_settings()['auto_open_report'] else '关'}")
+    print("=" * 50)
+    input("\n按 Enter 返回菜单...")
+
+
+def _menu_update_kernel() -> None:
+    """更新 mihomo 内核（旧菜单 6）：版本对比 + 下载 + 原子替换"""
+    cur_bin = ""
+    if os.path.exists(MIHOMO_DIR):
+        for f in os.listdir(MIHOMO_DIR):
+            if f.startswith("mihomo") and (f.endswith(".exe") or "." not in f):
+                cur_bin = os.path.join(MIHOMO_DIR, f)
+                break
+    cur_ver = MihomoEngine._get_mihomo_version(cur_bin) if cur_bin else ""
+    target_ver = MihomoEngine._get_latest_tag()
+    if cur_ver:
+        print(f"当前版本: {cur_ver}" + (f" → 目标版本: {target_ver}" if target_ver else ""))
+    elif target_ver:
+        print(f"目标版本: {target_ver}")
+    print("正在更新 mihomo 内核...")
+    try:
+        tmp_dir = tempfile.mkdtemp(prefix="mihomo_update_")
+        binary = MihomoEngine._download_mihomo(target_dir=tmp_dir)
+        if binary:
+            # 原子替换：旧目录 rename 为 .bak → move 新内核 → 成功删备份 / 失败回滚
+            bak = MIHOMO_DIR + ".bak"
+            if os.path.exists(MIHOMO_DIR):
+                if os.path.exists(bak):
+                    shutil.rmtree(bak, ignore_errors=True)
+                os.rename(MIHOMO_DIR, bak)  # 同盘 rename 原子；失败时旧内核原样保留
+            os.makedirs(MIHOMO_DIR, exist_ok=True)
+            dst = os.path.join(MIHOMO_DIR, os.path.basename(binary))
+            try:
+                shutil.move(binary, dst)
+            except Exception:
+                # move 失败：回滚旧内核
+                if os.path.exists(bak):
+                    if os.path.exists(MIHOMO_DIR):
+                        shutil.rmtree(MIHOMO_DIR, ignore_errors=True)
+                    os.rename(bak, MIHOMO_DIR)
+                raise
+            if os.path.exists(bak):
+                shutil.rmtree(bak, ignore_errors=True)  # 成功后清理备份
+            new_ver = MihomoEngine._get_mihomo_version(dst)
+            logger.info(f"mihomo 更新完成: {dst}",
+                        extra=_ev("mihomo_update", {"ok": True, "path": dst,
+                                                    "version": new_ver}))
+            print(f"[OK] 更新完成: {dst}" + (f" ({new_ver})" if new_ver else ""))
+        else:
+            logger.error("mihomo 更新失败（下载或解压失败）",
+                         extra=_ev("mihomo_update", {"ok": False, "error": "download/unzip"}))
+            print("[错误] 更新失败")
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+    except Exception as e:
+        logger.error(f"mihomo 更新失败: {_safe_exc_str(e)}",
+                     extra=_ev("mihomo_update", {"ok": False, "error": _safe_exc_str(e)[:200]}))
+        print(f"[错误] 更新失败: {_safe_exc_str(e)}")
+    input("\n按 Enter 返回菜单...")
+
+
+def _menu_stability() -> None:
+    """节点稳定性（二级 1，数据=profiles.json）：默认平均速度降序，r=按可达率降序"""
+    try:
+        data = load_profiles()
+    except Exception as e:
+        print(f"[错误] 档案读取失败: {_safe_exc_str(e)}")
+        input("\n按 Enter 返回菜单...")
+        return
+    window = load_settings().get("stability_window", 10)
+    if len(data.get("runs", [])) < 2:
+        print("历史数据不足（至少需要 2 次测试），先跑几次测试再来看稳定性")
+        input("\n按 Enter 返回菜单...")
+        return
+    rows = node_stability_report(data, window)
+    if not rows:
+        print("档案为空")
+        input("\n按 Enter 返回菜单...")
+        return
+    by_reach = False
+    while True:
+        print(f"\n节点稳定性（近 {window} 次）  [r]=按可达率排序  回车=返回")
+        print(f"{'分层':<6} {'节点':<26} {'出现':>7} {'可达':>6} {'平均速度':>12} {'波动'}")
+        print("-" * 70)
+        for row in rows:
+            name = _trunc_width(_flag_to_text(row["name"]), 26)
+            if row["layer"] == "新面孔":
+                appear_txt = "首见"
+                reach_txt = "-"
+            else:
+                appear_txt = f"{row['appear']}/{row['appear_total']}"
+                reach_txt = f"{row['reach'] * 100:.0f}%" if row["reach"] is not None else "-"
+            avg_txt = f"{row['avg']:.1f}MB/s" if row["avg"] is not None else "--"
+            sigma_txt = f"±{row['sigma']:.1f}" if row["sigma"] is not None else "-"
+            print(f"[{_pad_right(row['layer'], 4)}] {_pad_right(name, 26)} "
+                  f"{appear_txt:>7} {reach_txt:>6} {avg_txt:>12} {sigma_txt}")
+        try:
+            act = input(": ").strip().lower()
+        except KeyboardInterrupt:
+            return
+        if act == "r":
+            by_reach = not by_reach
+            if by_reach:
+                rows.sort(key=lambda x: (x["reach"] is None, -(x["reach"] or 0)))
+            else:
+                rows.sort(key=lambda x: (x["avg"] is None, -(x["avg"] or 0)))
+            continue
+        return
 
 
 async def async_main():
@@ -284,15 +699,22 @@ async def async_main():
                 _open_report(result)
             return
 
-    # 交互菜单模式
+    # 交互菜单模式（v4.29.0 三级：main/more/maint；Ctrl+C 一次返回上级，一级两次退出）
     last_result_path = ""
+    menu_level = "main"
     ctrl_c_count = 0
+    prompt_map = {"main": "[0-6]", "more": "[0-9]", "maint": "[0-3]"}
     while True:
-        show_menu(last_result_path)
+        show_menu(last_result_path, menu_level)
         try:
-            choice = input("\n请选择 [1-13]: ").strip()
+            choice = input(f"\n请选择 {prompt_map[menu_level]}: ").strip()
             ctrl_c_count = 0  # 正常输入后清零
         except KeyboardInterrupt:
+            if menu_level != "main":
+                print("\n（返回上级菜单）")
+                menu_level = "main" if menu_level == "more" else "more"
+                ctrl_c_count = 0
+                continue
             ctrl_c_count += 1
             if ctrl_c_count >= 2:
                 print("\n再见!")
@@ -304,359 +726,65 @@ async def async_main():
                 print("\n再见!")
                 break
             continue
-        logger.debug("菜单选择: %s", choice, extra=_ev("menu_choice", {"choice": choice}))
+        logger.debug("菜单选择: %s（级别=%s）", choice, menu_level,
+                     extra=_ev("menu_choice", {"choice": choice, "level": menu_level}))
 
-        if choice in ("1", "2", "3", "4", "8"):
-            fast = choice == "8"  # 快速测速：5s 窗口/跳过 IP 检测
-            urls = read_subscribe_urls()
-            if not urls:
-                manual = input("未找到 代理.txt，请输入订阅URL: ").strip()
-                logger.debug(
-                    "手动输入订阅URL",
-                    extra=_ev("manual_subscribe_input",
-                              {"url": _mask_url(manual) if manual else ""}))
-                if manual:
-                    urls = [manual]
-                    # 询问保存到 代理.txt（默认不保存；重复行跳过）
-                    try:
-                        save = input("保存该订阅 URL 到 代理.txt 吗？[y/N]: ").strip().lower()
-                    except KeyboardInterrupt:
-                        save = ""
-                    if save in ("y", "yes"):
-                        msg = _append_subscribe_url(manual)
-                        print(f"[信息] {msg}")
-                        if msg == "已添加":
-                            logger.info("订阅 URL 已保存到 代理.txt",
-                                        extra=_ev("manual_subscribe_input",
-                                                  {"url": _mask_url(manual), "saved": True}))
-                        else:
-                            logger.info("订阅 URL 未保存: %s", msg,
-                                        extra=_ev("manual_subscribe_input",
-                                                  {"url": _mask_url(manual), "saved": False}))
-                else:
-                    continue
-            else:
-                urls = _select_subscribe_urls(urls)  # 多条订阅手动选择
-                if not urls:
-                    continue  # 用户取消 → 回菜单
-            mode_map = {"1": "speed", "2": "normal", "3": "streaming_ai",
-                        "4": "streaming_all", "8": "speed"}
-            mode = mode_map.get(choice, "speed")
-
-            print("\n排序方式：")
-            print("  1. 订阅顺序")
-            print("  2. 最大速度 降序 ⬅ 默认")
-            print("  3. 最大速度 升序")
-            print("  4. 平均速度 降序")
-            print("  5. 平均速度 升序")
-            print("  6. 节点名 A→Z")
-            print("  7. 节点名 Z→A")
-            sort_choice = input("请选择 [1-7] (默认2): ").strip()
-            sort_map = {"1": "none", "2": "max_desc", "3": "max_asc",
-                        "4": "avg_desc", "5": "avg_asc",
-                        "6": "name_asc", "7": "name_desc"}
-            sort_by = sort_map.get(sort_choice, "max_desc")
-
-            last_result_path = await run_test(urls, mode, sort_by, fast=fast,
-                                              workers=load_settings().get("workers", DEFAULT_WORKERS),
-                                              window_seconds=0 if fast else load_settings().get("speed_window_seconds", 0))
-            if last_result_path and os.path.exists(last_result_path) and load_settings().get("auto_open_report", True):
-                _open_report(last_result_path)
-            input("\n按 Enter 返回菜单...")
-
-        elif choice == "9":
-            # 节点筛选测速：关键字（任一匹配）或前 N 个节点
-            filt = input("筛选（节点名关键字，如 香港 JP；N=10 只测前10个；回车=全部）: ").strip()
-            node_filter = ""
-            node_limit = 0
-            if filt.upper().startswith("N="):
-                try:
-                    node_limit = max(1, int(filt[2:]))
-                except ValueError:
-                    print("[错误] 数量格式无效（示例: N=10）")
-                    input("\n按 Enter 返回菜单...")
-                    continue
-            else:
-                node_filter = filt
-            print("模式: 1.简单测速  2.标准测试  5.快速测速")
-            mode_choice = input("请选择 [1/2/5] (默认1): ").strip()
-            fast9 = mode_choice == "5"
-            mode9 = "normal" if mode_choice == "2" else "speed"
-            urls = read_subscribe_urls()
-            if not urls:
-                print("[错误] 未找到 代理.txt")
+        if menu_level == "main":
+            if choice in ("1", "2", "3", "4"):
+                mode_map = {"1": "normal", "2": "speed",
+                            "3": "streaming_ai", "4": "streaming_all"}
+                last_result_path = await _menu_run_flow(mode_map[choice])
+            elif choice == "5":
+                print("快速检测 开发中（v4.30 上线）")
                 input("\n按 Enter 返回菜单...")
+            elif choice == "6":
+                menu_level = "more"
                 continue
-            urls = _select_subscribe_urls(urls)  # 多条订阅手动选择
-            if not urls:
-                continue  # 用户取消 → 回菜单
-            print("\n排序方式：")
-            print("  1. 订阅顺序")
-            print("  2. 最大速度 降序 ⬅ 默认")
-            print("  3. 最大速度 升序")
-            print("  4. 平均速度 降序")
-            print("  5. 平均速度 升序")
-            print("  6. 节点名 A→Z")
-            print("  7. 节点名 Z→A")
-            sort_choice = input("请选择 [1-7] (默认2): ").strip()
-            sort_map = {"1": "none", "2": "max_desc", "3": "max_asc",
-                        "4": "avg_desc", "5": "avg_asc",
-                        "6": "name_asc", "7": "name_desc"}
-            sort_by = sort_map.get(sort_choice, "max_desc")
-            st9 = load_settings()
-            last_result_path = await run_test(urls, mode9, sort_by, fast=fast9,
-                                              workers=st9.get("workers", DEFAULT_WORKERS),
-                                              node_filter=node_filter, node_limit=node_limit,
-                                              window_seconds=0 if fast9 else st9.get("speed_window_seconds", 0))
-            if last_result_path and os.path.exists(last_result_path) and st9.get("auto_open_report", True):
-                _open_report(last_result_path)
-            input("\n按 Enter 返回菜单...")
-
-        elif choice == "10":
-            # 结果管理：列最近报告，编号打开 / D+编号删除
-            reports = _list_reports()
-            if not reports:
-                print("output 目录暂无报告")
+            elif choice == "0":
+                print("再见!")
+                break
             else:
-                print("最近报告（输入编号=打开，D+编号=删除，回车=返回）：")
-                for i, (base, files) in enumerate(reports, 1):
-                    fp = os.path.join(OUTPUT_DIR, base + ".png")
-                    if not os.path.exists(fp):
-                        fp = os.path.join(OUTPUT_DIR, files[0])
-                    try:
-                        mt = time.strftime("%m-%d %H:%M", time.localtime(os.path.getmtime(fp)))
-                    except OSError:
-                        mt = "?"
-                    mode = ""
-                    if base.startswith("测速结果_"):
-                        mode = _MODE_NAMES.get(base[len("测速结果_"):].rsplit("_", 2)[0], "")
-                    print(f"  {i:>2}. {mt} {_pad_right(mode, 10)} {base}")
-                act = input("操作: ").strip().upper()
-                if act:
-                    try:
-                        if act.startswith("D"):
-                            idx = int(act[1:])
-                            base, files = reports[idx - 1]
-                            for f in files:
-                                try:
-                                    os.remove(os.path.join(OUTPUT_DIR, f))
-                                except OSError:
-                                    pass
-                            print(f"[OK] 已删除: {base}（{len(files)} 个文件）")
-                        else:
-                            idx = int(act)
-                            base, files = reports[idx - 1]
-                            pngs = [f for f in files if f.endswith(".png")]
-                            _open_report(os.path.join(OUTPUT_DIR, pngs[0] if pngs else files[0]))
-                    except (ValueError, IndexError):
-                        print("[错误] 无效编号")
-            input("\n按 Enter 返回菜单...")
-
-        elif choice == "11":
-            # 订阅管理：查看（遮蔽）/ 添加 / 删除 / 打开文件编辑
-            while True:
-                urls = read_subscribe_urls()
-                print("\n当前订阅 URL（已遮蔽显示）：")
-                if not urls:
-                    print("  （空）")
-                for i, u in enumerate(urls, 1):
-                    print(f"  {i:>2}. {_mask_url(u)}")
-                print("操作: A=添加  D+编号=删除  O=打开文件编辑  回车=返回")
-                act = input(": ").strip().upper()
-                if not act:
-                    break
-                if act == "A":
-                    new_u = input("输入订阅 URL: ").strip()
-                    if not new_u:
-                        continue
-                    msg = _append_subscribe_url(new_u)
-                    print(f"[信息] {msg}")
-                    if msg == "已添加":
-                        logger.info("订阅 URL 已添加",
-                                    extra=_ev("manual_subscribe_input",
-                                              {"url": _mask_url(new_u), "added": True}))
-                elif act == "O":
-                    if os.path.exists(SUBSCRIBE_FILE):
-                        _open_report(SUBSCRIBE_FILE)
-                    else:
-                        print("[错误] 代理.txt 不存在")
-                elif act.startswith("D"):
-                    try:
-                        idx = int(act[1:]) - 1
-                        if 0 <= idx < len(urls):
-                            target = urls[idx]
-                            # 菜单显示行（非空非注释）→ 原始行号映射；逐行原样保留（newline=""）
-                            with open(SUBSCRIBE_FILE, "r", encoding="utf-8-sig", newline="") as fr:
-                                raw_lines = fr.readlines()
-                            clean_idx = [i for i, l in enumerate(raw_lines)
-                                         if l.strip() and not l.strip().startswith("#")]
-                            del_raw = clean_idx[idx]
-                            rest_lines = [l for i, l in enumerate(raw_lines) if i != del_raw]
-                            with open(SUBSCRIBE_FILE, "w", encoding="utf-8", newline="") as f:
-                                f.write("".join(rest_lines))
-                            print(f"[OK] 已删除第 {idx + 1} 条")
-                            logger.info("订阅 URL 已删除",
-                                        extra=_ev("manual_subscribe_input",
-                                                  {"url": _mask_url(target), "deleted": True}))
-                        else:
-                            print("[错误] 编号超出范围")
-                    except (ValueError, IndexError):
-                        print("[错误] 无效编号")
-                else:
-                    print("[错误] 无效操作")
-
-        elif choice == "12":
-            # 设置：窗口秒数 / 并行数 / 自动打开报告 / 恢复默认（~/.airport_speedtest.json）
-            print(_current_settings_line())
-            print("操作: 1=测速窗口秒数  2=并行数  3=自动打开报告  4=恢复默认  回车=返回")
-            act = input(": ").strip()
-            try:
-                if act == "1":
-                    try:
-                        v = int(input(f"测速窗口秒数 (3-30，当前 {load_settings()['speed_window_seconds']}): ").strip())
-                    except ValueError:
-                        print("[错误] 请输入数字")
-                    else:
-                        st = load_settings()
-                        st["speed_window_seconds"] = max(3, min(v, 30))
-                        save_settings(st)
-                        print(f"[OK] 测速窗口: {st['speed_window_seconds']}s（菜单模式生效；--fast 仍为 5s）")
-                elif act == "2":
-                    try:
-                        v = int(input(f"并行数 (1-8，当前 {load_settings()['workers']}): ").strip())
-                    except ValueError:
-                        print("[错误] 请输入数字")
-                    else:
-                        st = load_settings()
-                        st["workers"] = max(1, min(v, 8))
-                        save_settings(st)
-                        print(f"[OK] 并行数: {st['workers']}")
-                elif act == "3":
-                    v = input(f"自动打开报告 [y/N]（当前 {'开' if load_settings()['auto_open_report'] else '关'}）: ").strip().lower()
-                    st = load_settings()
-                    st["auto_open_report"] = v in ("y", "yes")
-                    save_settings(st)
-                    print(f"[OK] 自动打开报告: {'开' if st['auto_open_report'] else '关'}")
-                elif act == "4":
-                    reset_settings()
-                    print(f"[OK] 已恢复默认: {_current_settings_line()}")
-            except OSError as e:
-                # 设置文件写失败（只读/权限/磁盘）不拖垮菜单
-                print(f"[错误] 保存设置失败: {_safe_exc_str(e)}")
-                logger.warning("保存设置失败: %s", _safe_exc_str(e))
-            input("\n按 Enter 返回菜单...")
-
-        elif choice == "13":
-            # 环境信息：版本/依赖/mihomo/订阅/文件统计（标签列统一 16 显示宽对齐）
-            print("=" * 50)
-            print(f"{_pad_right('工具版本', 16)}: v{VERSION}")
-            print(f"{_pad_right('Python', 16)}: {sys.version.split()[0]} ({sys.platform})")
-            print(f"{_pad_right('依赖', 16)}: aiohttp {_pkg_version('aiohttp')} / PyYAML {_pkg_version('PyYAML')} / "
-                  f"Pillow {_pkg_version('Pillow')} / tqdm {_pkg_version('tqdm')} / "
-                  f"requests {_pkg_version('requests')}")
-            print(f"{_pad_right('cloudscraper', 16)}: {'可用' if HAS_CLOUDSCRAPER else '未安装'} | "
-                  f"yt-dlp: {'可用' if HAS_YTDLP else '未安装'}")
-            cur_bin = ""
-            if os.path.exists(MIHOMO_DIR):
-                for f in os.listdir(MIHOMO_DIR):
-                    if f.startswith("mihomo") and (f.endswith(".exe") or "." not in f):
-                        cur_bin = os.path.join(MIHOMO_DIR, f)
-                        break
-            ver = MihomoEngine._get_mihomo_version(cur_bin) if cur_bin else ""
-            print(f"{_pad_right('mihomo', 16)}: {ver or '未安装'}（{cur_bin or '无'}）")
-            urls = read_subscribe_urls()
-            print(f"{_pad_right('订阅', 16)}: {len(urls)} 条" + ("（未配置）" if not urls else ""))
-            for d, name in ((OUTPUT_DIR, "报告文件"), (LOG_DIR, "日志文件")):
-                try:
-                    n = len(os.listdir(d)) if os.path.isdir(d) else 0
-                    print(f"{_pad_right(name, 16)}: {n}")
-                except OSError:
-                    pass
-            print(f"{_pad_right('当前设置', 16)}: 测速窗口 {load_settings()['speed_window_seconds']}s | "
-                  f"并行 {load_settings()['workers']} | "
-                  f"自动打开报告 {'开' if load_settings()['auto_open_report'] else '关'}")
-            print("=" * 50)
-            input("\n按 Enter 返回菜单...")
-
-        elif choice == "5":
-            # 优先打开本次会话生成的结果；否则回退扫描 output 目录最新 PNG
-            target = last_result_path if last_result_path and os.path.exists(last_result_path) else ""
-            if not target and os.path.exists(OUTPUT_DIR):
-                pngs = [f for f in os.listdir(OUTPUT_DIR) if f.endswith(".png")]
-                if pngs:
-                    latest = max(pngs, key=lambda f: os.path.getmtime(os.path.join(OUTPUT_DIR, f)))
-                    target = os.path.join(OUTPUT_DIR, latest)
-            if target:
-                _open_report(target)
+                _invalid_choice(choice)
+        elif menu_level == "more":
+            if choice == "1":
+                _menu_stability()
+            elif choice == "2":
+                print("结果对比 开发中（v4.30 上线）")
+                input("\n按 Enter 返回菜单...")
+            elif choice == "3":
+                print("订阅分组对比 开发中（v4.31 上线）")
+                input("\n按 Enter 返回菜单...")
+            elif choice == "4":
+                last_result_path = await _menu_filtered_run()
+            elif choice == "5":
+                _menu_view_last(last_result_path)
+            elif choice == "6":
+                _menu_manage_results()
+            elif choice == "7":
+                _menu_manage_subs()
+            elif choice == "8":
+                _menu_settings()
+            elif choice == "9":
+                menu_level = "maint"
+                continue
+            elif choice == "0":
+                menu_level = "main"
+                continue
             else:
-                print("暂无结果文件")
-            input("\n按 Enter 返回菜单...")
-
-        elif choice == "6":
-            # 版本对比：现有内核 mihomo -v vs 远程最新 tag（失败静默降级）
-            cur_bin = ""
-            if os.path.exists(MIHOMO_DIR):
-                for f in os.listdir(MIHOMO_DIR):
-                    if f.startswith("mihomo") and (f.endswith(".exe") or "." not in f):
-                        cur_bin = os.path.join(MIHOMO_DIR, f)
-                        break
-            cur_ver = MihomoEngine._get_mihomo_version(cur_bin) if cur_bin else ""
-            target_ver = MihomoEngine._get_latest_tag()
-            if cur_ver:
-                print(f"当前版本: {cur_ver}" + (f" → 目标版本: {target_ver}" if target_ver else ""))
-            elif target_ver:
-                print(f"目标版本: {target_ver}")
-            print("正在更新 mihomo 内核...")
-            try:
-                tmp_dir = tempfile.mkdtemp(prefix="mihomo_update_")
-                binary = MihomoEngine._download_mihomo(target_dir=tmp_dir)
-                if binary:
-                    # 原子替换：旧目录 rename 为 .bak → move 新内核 → 成功删备份 / 失败回滚
-                    bak = MIHOMO_DIR + ".bak"
-                    if os.path.exists(MIHOMO_DIR):
-                        if os.path.exists(bak):
-                            shutil.rmtree(bak, ignore_errors=True)
-                        os.rename(MIHOMO_DIR, bak)  # 同盘 rename 原子；失败时旧内核原样保留
-                    os.makedirs(MIHOMO_DIR, exist_ok=True)
-                    dst = os.path.join(MIHOMO_DIR, os.path.basename(binary))
-                    try:
-                        shutil.move(binary, dst)
-                    except Exception:
-                        # move 失败：回滚旧内核
-                        if os.path.exists(bak):
-                            if os.path.exists(MIHOMO_DIR):
-                                shutil.rmtree(MIHOMO_DIR, ignore_errors=True)
-                            os.rename(bak, MIHOMO_DIR)
-                        raise
-                    if os.path.exists(bak):
-                        shutil.rmtree(bak, ignore_errors=True)  # 成功后清理备份
-                    new_ver = MihomoEngine._get_mihomo_version(dst)
-                    logger.info(f"mihomo 更新完成: {dst}",
-                                extra=_ev("mihomo_update", {"ok": True, "path": dst,
-                                                            "version": new_ver}))
-                    print(f"[OK] 更新完成: {dst}" + (f" ({new_ver})" if new_ver else ""))
-                else:
-                    logger.error("mihomo 更新失败（下载或解压失败）",
-                                 extra=_ev("mihomo_update", {"ok": False, "error": "download/unzip"}))
-                    print("[错误] 更新失败")
-                shutil.rmtree(tmp_dir, ignore_errors=True)
-            except Exception as e:
-                logger.error(f"mihomo 更新失败: {_safe_exc_str(e)}",
-                             extra=_ev("mihomo_update", {"ok": False, "error": _safe_exc_str(e)[:200]}))
-                print(f"[错误] 更新失败: {_safe_exc_str(e)}")
-            input("\n按 Enter 返回菜单...")
-
-        elif choice == "7":
-            print("再见!")
-            break
-
-        else:
-            if not choice:
-                continue  # 空回车直接重绘菜单
-            print("无效选择")
-            logger.warning("无效菜单选择: %s", choice,
-                           extra=_ev("invalid_input", {"choice": choice}))
-            input("\n按 Enter 继续...")
+                _invalid_choice(choice)
+        else:  # maint
+            if choice == "1":
+                _menu_update_kernel()
+            elif choice == "2":
+                _menu_env_info()
+            elif choice == "3":
+                print("清理旧报告与日志 开发中（v4.31 上线）")
+                input("\n按 Enter 返回菜单...")
+            elif choice == "0":
+                menu_level = "more"
+                continue
+            else:
+                _invalid_choice(choice)
 
 
 def main():

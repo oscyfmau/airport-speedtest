@@ -8,6 +8,28 @@
 
 ---
 
+## v4.29.0
+
+### 新增
+- **节点档案库 `core/profiles.py`**：output/profiles.json（version=1）跨 run 记录节点身份与证据——runs 索引保留 50 条（RUNS_MAX）、每档案证据 10 条（EVIDENCE_MAX）更早折叠进 fold（n/speed_sum/speed_ss/reach_n/unlock_sum，按最老时间戳计权重）、appear 列表 20 条算近 N 次出现率；身份识别四级（name 精确 → 剥 `_N` 去重后缀 → `(type,server,port)` → 本轮桥接：同 server:port 同落地 IP 并入，跨 run 不做）；质量标记 standard/quick/streaming，加权统计 `w=0.5^(年龄/3)`、quick 证据 ×0.5；损坏/版本不符自动重建（扫描 output/测速结果_*.json 重放，2-5 秒级）；run 收尾 `run_test` 与 `_finish_partial` 各调 `append_run`（互斥不重复，异常 WARNING 静默降级）；事件 `profiles_written`/`profiles_rebuild`
+- **节点稳定性菜单**（二级 1）：常青树/过山车/新面孔/普通分层（新面孔=证据<3；常青树=出现率≥0.8 且 σ/均值<0.3；过山车=出现率≥0.8 且 σ/均值≥0.3，STABILITY_APPEAR_RATIO/STABILITY_SIGMA），显示近 N 次出现率/可达率/平均速度±波动，默认平均速度降序、r 切换可达率降序；history 不足 2 次提示而非报错
+- **菜单三级重构**：一级（1 标准测试/2 下载速度/3 AI 网站/4 所有流媒体/5 快速检测占位/6 更多/0 退出）→ 二级「更多」（1 节点稳定性/2 结果对比占位/3 订阅分组对比占位/4 节点筛选测速/5 查看上次结果/6 结果管理/7 订阅管理/8 设置/9 维护/0 返回）→ 三级「维护」（1 更新内核/2 环境信息/3 清理占位/0 返回）；旧 13 项全部映射保留，`--fast` 仅 CLI；Ctrl+C 一级两次退出、二/三级一次返回上级；`menu_choice` 事件加 level
+- **测前流量预估**：测速类模式打印 `预计下载约 X-X GB（N 节点）`（节点数×10~30MB）；>50 节点需回车确认（settings.confirm_large_run 可关）
+- **报告文件名毫秒级共享时间戳**：`report._new_report_timestamp()`（同秒冲突加毫秒后缀，与 new_run_log 同策略），PNG/JSON 共用同一值（generate_report_image/export_results_json 加 report_ts 参数）
+- **PNG 页脚流量显示**：ftr3 追加 `本次实测下载 X`（state._RUN_BYTES，mode!=streaming）；JSON 顶层加 run_bytes
+- **设置项**：stability_window（5/10/20 默认 10）、confirm_large_run（bool 默认开）
+- **models.ProxyNode.sub_index 字段**（Optional[int]，本版仅透传，v4.31 分组对比使用）
+
+### 修改
+- cli.py 菜单分发重构：测速入口合并 `_menu_run_flow`（订阅收集/排序选择/run_test/自动开报告），排序选择 `_menu_choose_sort`，旧 5/6/9/10/11/12/13 动作分别收进 `_menu_view_last/_menu_update_kernel/_menu_filtered_run/_menu_manage_results/_menu_manage_subs/_menu_settings/_menu_env_info`
+- runner.py `_finish_partial`/run_test 收尾统一生成 report_ts 并传给 PNG/JSON 导出
+
+### 修复
+- **PNG/JSON 文件名跨秒配对竞态**：旧实现两个导出函数各自取秒级时间戳，恰跨秒时同名不同时 → 配对断裂；共享时间戳修复
+
+### 移除
+- 菜单 8 快速测速不再单列（CLI `--fast` 保留原语义）
+
 ## v4.28.0
 
 ### 修复

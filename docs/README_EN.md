@@ -9,7 +9,7 @@ Pull all nodes from an airport subscription, test latency, speed, streaming unlo
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Downloads](https://img.shields.io/github/downloads/oscyfmau/airport-speedtest/total?style=flat-square)](https://github.com/oscyfmau/airport-speedtest/releases)
 
-Version: v4.28.0 | Repository: [github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) | [Changelog](CHANGELOG.md)
+Version: v4.29.0 | Repository: [github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) | [Changelog](CHANGELOG.md)
 
 > This project was written by AI and developed for personal needs — take it as-is.
 
@@ -21,13 +21,13 @@ Version: v4.28.0 | Repository: [github.com/oscyfmau/airport-speedtest](https://g
 
 ## Quick Start (3 Steps, No Command Line Skills Needed)
 
-1. **Download**: open the [Releases page](https://github.com/oscyfmau/airport-speedtest/releases), download the latest `airport-speedtest-v4.28.0.zip` (a slim package with everything needed to run), unzip it, then read `使用教程.txt` inside first (if you know git you can also `git clone`)
+1. **Download**: open the [Releases page](https://github.com/oscyfmau/airport-speedtest/releases), download the latest `airport-speedtest-v4.29.0.zip` (a slim package with everything needed to run), unzip it, then read `使用教程.txt` inside first (if you know git you can also `git clone`)
 2. **Fill in the subscription**: in the unzipped folder, copy `代理.txt.example`, rename it to `代理.txt`, open it with Notepad, paste your subscription link and save
    - What is a subscription link? A URL provided by your airport service provider (usually starts with `https://` and contains all node info); get it from the "Copy subscription" option on the airport website or in the client app
 3. **Run**:
    - Install Python 3.9+ ([python.org](https://www.python.org/downloads/), check "Add python.exe to PATH" during installation)
    - In the unzipped folder run `pip install -r core/requirements.txt`
-   - Double-click `run.bat` → select `1` Simple speed test in the menu → wait a few minutes → the PNG report opens automatically (report files are in the `output/` folder, logs are in the `log/` folder)
+   - Double-click `run.bat` → select `2` Download speed in the menu → wait a few minutes → the PNG report opens automatically (report files are in the `output/` folder, logs are in the `log/` folder)
 
 The mihomo core downloads automatically on first run to `bin/` (about 47MB) — no manual download needed.
 
@@ -65,7 +65,7 @@ The mihomo core downloads automatically on first run to `bin/` (about 47MB) — 
 
 Either of the two ways:
 
-- No git: go to the [Releases page](https://github.com/oscyfmau/airport-speedtest/releases), download the latest `airport-speedtest-v4.28.0.zip` (slim package, run core files only) and unzip it; download `Source code (zip)` instead only if you want to modify the code
+- No git: go to the [Releases page](https://github.com/oscyfmau/airport-speedtest/releases), download the latest `airport-speedtest-v4.29.0.zip` (slim package, run core files only) and unzip it; download `Source code (zip)` instead only if you want to modify the code
 - With git:
 
 ```bash
@@ -101,23 +101,39 @@ Subscription URLs are read by default from `代理.txt` at the project root (one
 
 ### Menu Mode
 
-| Option | Description |
-|---|---|
-| 1. Simple speed test | TCP detection + HTTP speed test (fastest) |
-| 2. Standard test | Speed test + 8 common streaming platforms + IP quality + web page simulation |
-| 3. AI streaming | 8 AI platform checks |
-| 4. All streaming | All 33 platforms |
-| 5. View last result | Open the latest PNG report in the output folder |
-| 6. Update core | Download the latest mihomo core (shows current/target version; downloads first, then replaces) |
-| 7. Exit | Exit the program |
-| 8. Quick speed test | Same as 1 but with a 5s speed window and no IP check (saves time and traffic) |
-| 9. Filtered speed test | Filter nodes by name keywords (e.g. `香港 JP`) or first N nodes (`N=10`), then choose simple/standard/quick mode |
-| 10. Result management | List the latest 15 reports in output (time/mode); type a number to open, `D<number>` to delete |
-| 11. Subscription management | Masked view of 代理.txt URLs; add (deduped), delete, or open the file in Notepad |
-| 12. Settings | Speed window seconds (3-30, default 8), parallelism (1-8, default 4), auto-open report toggle; saved to `~/.airport_speedtest.json` across sessions (applies to menu mode; `--fast` stays 5s) |
-| 13. Environment info | Tool/Python/dependency/mihomo versions, subscription count, report & log file counts |
+The menu has three levels (since v4.29.0): level 1 = test entries, level 2 = auxiliary features, level 3 = maintenance.
 
-The menu header shows the subscription-file status and a summary of the last run; **when 代理.txt contains multiple subscriptions, the tool lists them and asks you to choose before each test** (comma-separated multi-select, Enter = all); press Ctrl+C during a test to interrupt (a partial report is generated), at the menu press Ctrl+C once to return to the menu and twice to exit.
+| Level 1 menu | Description |
+|---|---|
+| 1. Standard test | Speed test + 8 common streaming platforms + IP quality + web page simulation |
+| 2. Download speed | TCP detection + HTTP speed test (fastest, least traffic) |
+| 3. AI websites | 8 AI platform checks |
+| 4. All streaming | All 33 platforms |
+| 5. Quick check | Parallel approximate speed test + 4 core streaming platforms (available in v4.30; shows "in development" for now) |
+| 6. More | Enter the level-2 menu |
+| 0. Exit | Exit the program |
+
+| Level 2 menu "More" | Description |
+|---|---|
+| 1. Node stability | Node profile view: evergreen / roller-coaster / newcomer / normal tiers, appearance rate over the last N runs, reachability, average speed and volatility (N adjustable in Settings) |
+| 2. Result comparison | Compare two test runs (available in v4.30; shows "in development" for now) |
+| 3. Subscription comparison | Cross-airport comparison (available in v4.31; shows "in development" for now) |
+| 4. Filtered speed test | Filter nodes by name keywords (e.g. `香港 JP`) or first N nodes (`N=10`), then choose simple/standard/quick mode |
+| 5. View last result | Open the latest PNG report in the output folder |
+| 6. Result management | List the latest 15 reports in output (time/mode); type a number to open, `D<number>` to delete |
+| 7. Subscription management | Masked view of 代理.txt URLs; add (deduped), delete, or open the file in Notepad |
+| 8. Settings | Speed window seconds (3-30, default 8), parallelism (1-8, default 4), auto-open report, stability window (5/10/20, default 10) and large-run confirm (>50 nodes) toggles; saved to `~/.airport_speedtest.json` across sessions |
+| 9. Maintenance | Enter the level-3 maintenance menu |
+| 0. Back | Return to the level-1 menu |
+
+| Level 3 menu "Maintenance" | Description |
+|---|---|
+| 1. Update core | Download the latest mihomo core (shows current/target version; downloads first, then replaces) |
+| 2. Environment info | Tool/Python/dependency/mihomo versions, subscription count, report & log file counts |
+| 3. Clean old reports | Clean up old reports and logs (available in v4.31; shows "in development" for now) |
+| 0. Back | Return to the level-2 menu |
+
+The menu header shows the subscription-file status and a summary of the last run; **when 代理.txt contains multiple subscriptions, the tool lists them and asks you to choose before each test** (comma-separated multi-select, Enter = all); press Ctrl+C during a test to interrupt (a partial report is generated); on level 1 press Ctrl+C once to return to the menu and twice to exit, on levels 2/3 press Ctrl+C once to go back one level.
 
 ### Sample Console Output
 
@@ -276,13 +292,13 @@ Run `python core/speed_test.py` in cmd to see the error message. Common causes: 
 Just send the PNG report image in the `output/` folder (the visual report). JSON is structured data (for advanced use), and logs are for troubleshooting — normally you don't need to send them.
 
 **The report didn't open automatically?**
-All report files are in the `output/` folder: double-click the latest `测速结果_*.png`, or select `5` in the menu to view the last result.
+All report files are in the `output/` folder: double-click the latest `测速结果_*.png`, or select `More → 5` in the menu to view the last result.
 
 **What should I do if it errors out?**
 Send the latest `测速日志_*.jsonl` from the `log/` folder; it records the runtime environment (Python version / dependency versions), every step, per-node details and the full traceback — no screenshots needed.
 
 **First run says mihomo download failed?**
-The mihomo core is downloaded from GitHub (~47MB) and may fail on some networks. You can: 1) check your network and retry; 2) manually download the mihomo Windows zip and put the extracted `mihomo.exe` into the `bin/` folder; 3) once GitHub is reachable, run menu option `6 Update core`.
+The mihomo core is downloaded from GitHub (~47MB) and may fail on some networks. You can: 1) check your network and retry; 2) manually download the mihomo Windows zip and put the extracted `mihomo.exe` into the `bin/` folder; 3) once GitHub is reachable, run `Maintenance → 1 Update core`.
 
 ## Known Limitations
 
@@ -293,7 +309,7 @@ The mihomo core is downloaded from GitHub (~47MB) and may fail on some networks.
 - Speed tests consume node traffic (about 10-30MB per node); be cautious about running full tests on "no heavy traffic" nodes
 - Web page simulation adds about 3-8 seconds per node in standard/full tests (4 sites concurrently, 8s timeout); skipped in `--fast` mode
 - TCP packet loss counts failures across 3 handshakes and is sensitive to transient jitter — reference only
-- Platform support (v4.28.0): Linux / macOS are NOT actually tested — the mihomo core auto-download is now fixed (Windows `.zip` / Linux-macOS `.gz` formats, x86_64/arm64 architectures; the download & decompress path was verified in a simulated Linux environment); on macOS a manually downloaded mihomo placed into `bin/` is blocked by Gatekeeper ("unidentified developer") — use the first-run auto-download or menu option `6 Update core`; on headless Linux the report does not open automatically (`xdg-open` missing; the test itself and manual viewing of `output/` are unaffected), and without a CJK font the PNG report shows boxes for Chinese text (install Noto Sans CJK)
+- Platform support (v4.29.0): Linux / macOS are NOT actually tested — the mihomo core auto-download is now fixed (Windows `.zip` / Linux-macOS `.gz` formats, x86_64/arm64 architectures; the download & decompress path was verified in a simulated Linux environment); on macOS a manually downloaded mihomo placed into `bin/` is blocked by Gatekeeper ("unidentified developer") — use the first-run auto-download or `Maintenance → 1 Update core`; on headless Linux the report does not open automatically (`xdg-open` missing; the test itself and manual viewing of `output/` are unaffected), and without a CJK font the PNG report shows boxes for Chinese text (install Noto Sans CJK)
 
 ### Privacy
 

@@ -15,6 +15,8 @@ DEFAULTS = {
     "speed_window_seconds": 8,  # 测速窗口秒数（3-30）
     "workers": 4,               # 流媒体/IP/网页并行数（1-8）
     "auto_open_report": True,   # 测试完成后自动打开 PNG 报告
+    "stability_window": 10,     # 节点稳定性视图的近 N 次 run 窗口（5/10/20）
+    "confirm_large_run": True,  # 节点数 > 50 时测前需回车确认（v4.29.0 流量预估）
 }
 
 
@@ -36,6 +38,16 @@ def _clamp(data: dict) -> None:
     if isinstance(raw, str):
         raw = raw.strip().lower() in ("1", "true", "yes", "on")
     data["auto_open_report"] = bool(raw)
+    # v4.29.0：稳定性窗口（5/10/20，其他值回退默认）
+    try:
+        sw = int(data.get("stability_window", 10))
+        data["stability_window"] = sw if sw in (5, 10, 20) else DEFAULTS["stability_window"]
+    except (TypeError, ValueError):
+        data["stability_window"] = DEFAULTS["stability_window"]
+    raw = data.get("confirm_large_run", True)
+    if isinstance(raw, str):
+        raw = raw.strip().lower() in ("1", "true", "yes", "on")
+    data["confirm_large_run"] = bool(raw)
 
 
 def load_settings() -> dict:

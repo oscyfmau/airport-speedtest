@@ -13,6 +13,7 @@ class ProxyNode:
     server: str
     port: int
     extra: dict = field(default_factory=dict)
+    sub_index: Optional[int] = None  # 订阅序号（v4.29.0 预留透传，v4.31 分组对比使用；0=第一份订阅）
 
     def to_clash_proxy(self) -> dict:
         """转换为 Clash YAML 代理配置"""
