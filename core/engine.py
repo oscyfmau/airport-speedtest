@@ -210,7 +210,8 @@ class MihomoEngine:
         try:
             r = _requests.get(
                 f"https://github.com/{MIHOMO_REPO}/releases/latest",
-                allow_redirects=True, timeout=10
+                allow_redirects=True, timeout=10,
+                proxies=dict(DIRECT_PROXIES),  # v4.28.0：强制直连
             )
             if r.status_code == 200:
                 tag = r.url.rstrip("/").split("/")[-1]
@@ -222,7 +223,8 @@ class MihomoEngine:
         try:
             r = _requests.get(
                 f"https://api.github.com/repos/{MIHOMO_REPO}/releases/latest",
-                timeout=10, headers={"User-Agent": "speed_test.py/1.0"}
+                timeout=10, headers={"User-Agent": "speed_test.py/1.0"},
+                proxies=dict(DIRECT_PROXIES),  # v4.28.0：强制直连
             )
             if r.status_code == 200:
                 return r.json()["tag_name"]
@@ -301,7 +303,8 @@ class MihomoEngine:
                 url = f"{base_url}/{fname}"
                 try:
                     print(f"  尝试: {fname}")
-                    zip_resp = _requests.get(url, stream=True, timeout=30)
+                    zip_resp = _requests.get(url, stream=True, timeout=30,
+                                              proxies=dict(DIRECT_PROXIES))  # v4.28.0：强制直连
                     if zip_resp.status_code == 200:
                         total = int(zip_resp.headers.get("content-length", 0))
                         zip_path = os.path.join(target_dir, fname)

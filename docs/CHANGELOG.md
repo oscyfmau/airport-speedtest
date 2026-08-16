@@ -8,6 +8,25 @@
 
 ---
 
+## v4.28.0
+
+### 修复
+- **本机代理开/关影响工具数据（核心）**：订阅拉取回退（`parser._try_fetch` 的 requests 分支）、末次 cloudscraper 兜底、userinfo 重拉（`_fetch_sub_usage`）、mihomo 内核下载与版本查询（`engine._get_latest_tag`/`_download_mihomo`）未显式指定代理——requests 会读环境变量与 Windows 注册表系统代理，本机代理开启（指向失效端口 127.0.0.1:7897）时这些请求全部失败，导致解析不到节点/内核不可用 → 全部传 `utils.DIRECT_PROXIES`（`{"http": "", "https": ""}` 空串值=该协议不走代理，环境与注册表代理均被屏蔽）
+- **yt-dlp 油管直链解析受环境代理影响**：proxy 为空时 yt-dlp 尊重环境代理变量 → 恒显式出口（直连传 `proxy=""`，节点隧道传 mihomo 地址）
+- **切换失败节点不记录原因**：`run_speed_test`/`run_streaming_test`/`run_ip_quality_test`/`run_webpage_test` 4 处 switch 失败仅控制台打印，error 字段留空 → 记 `error="切换失败"`（首个失败原因优先，不覆盖已有 error）
+
+### 新增
+- **死节点如实标注并跳过检测**：补测后仍直连与隧道均不通的节点（`tcp_ping is None` 且 `tcp_probe is not True`；`tcp_probe=None` 探测池不可用不算死，streaming-only 模式不参与）→ `error="节点不可达"`、流媒体预填 `跳过(节点不可达)`、`ip_info`/`webpage` 预填 error，阶段4 不再对这些节点做检测（不浪费 IP 源配额），结构化事件 `dead_nodes_skipped`
+- **系统代理状态提示**：`utils._system_proxy_info()` 读注册表（win32），开启时 `run_test` 启动阶段打印提示（内部请求已强制直连；TUN 模式会接管直连 TCP 属例外）
+- **报告速度列显示失败原因**：`report._ctxt` speed 单元格无速度数据且存在 error 时显示 error 文本（`_trunc_width` 截断 10 宽），死节点显示"节点不可达"、失败节点显示"下载失败/速度过低/切换失败"
+
+### 修改
+- `parser._try_fetch` 主路径 cloudscraper 的 proxies 改用共享常量 `DIRECT_PROXIES`（行为不变，口径统一）
+- `resolve_youtube_download_url` docstring 更新为恒显式出口语义
+
+### 移除
+- （无）
+
 ## v4.27.0
 
 ### 修复

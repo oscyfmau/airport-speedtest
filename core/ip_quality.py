@@ -297,6 +297,8 @@ async def run_ip_quality_test(mihomo: MihomoEngine, nodes: list[ProxyNode],
             pbar.set_postfix_str(f"{display} 检测中...")
             ok = await mihomo.switch_proxy(node.name)
             if not ok:
+                if node.name in results and not results[node.name].error:
+                    results[node.name].error = "切换失败"  # v4.28.0：如实记录
                 pbar.set_postfix_str(f"{display} 切换失败", refresh=False)
                 pbar.update(1)
                 continue

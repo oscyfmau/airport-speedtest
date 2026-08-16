@@ -189,6 +189,8 @@ async def run_speed_test(mihomo: MihomoEngine, nodes: list[ProxyNode],
             if not ok:
                 logger.warning("切换节点失败: %s", node.name,
                                extra=_ev("switch_node", {"node": node.name, "ok": False}))
+                if node.name in results and not results[node.name].error:
+                    results[node.name].error = "切换失败"  # v4.28.0：如实记录，报告/JSON 可见
                 print(f"[{i + 1:>{idx_w}}/{total_n}] {_pad_right(_trunc_width(display, 26), 26)} 切换失败")
                 pbar.set_postfix_str(f"{display} 切换失败", refresh=False)
                 pbar.update(1)

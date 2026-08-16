@@ -158,7 +158,14 @@ def _ctxt(cid, r):
     if cid=="http":
         if r.http_latency is None: return "--"  # 无延迟数据（非超时）
         return _fmt_ms(r.http_latency)
-    if cid=="speed": return _fmt_mb(r.speed)
+    if cid=="speed":
+        if r.speed is not None:
+            return _fmt_mb(r.speed)
+        if r.error:
+            # v4.28.0：无速度数据时如实显示失败原因（节点不可达/切换失败/下载失败等），
+            # 按显示宽度截断防长异常文本撑破列
+            return _trunc_width(r.error, 10)
+        return "--"
     if cid=="maxspeed": return _fmt_mb(r.max_speed if r.max_speed is not None else r.speed)
     if cid=="ip_type":
         d=r.ip_info

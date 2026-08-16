@@ -61,7 +61,8 @@ def resolve_youtube_download_url(timeout: int = 15, proxy: str = None) -> str:
 
     依赖 yt-dlp（处理签名解密与 PO token）；格式优先级 137/136/22/18/best；
     视频不可用或解析失败时尝试下一个视频 ID；总耗时上限 30 秒。
-    proxy 为空时走本机直连（尊重环境代理变量），否则经指定 HTTP 代理（节点隧道）。
+    出口恒为显式（v4.28.0）：proxy 为空时传空串 = yt-dlp 直连（不读环境/系统代理），
+    否则经指定 HTTP 代理（节点隧道）。
     """
     if state._YOUTUBE_DL_URL:
         return state._YOUTUBE_DL_URL
@@ -78,6 +79,8 @@ def resolve_youtube_download_url(timeout: int = 15, proxy: str = None) -> str:
     }
     if proxy:
         opts["proxy"] = proxy
+    else:
+        opts["proxy"] = ""  # v4.28.0：空串=强制直连，不读环境/系统代理
     t_start = time.monotonic()
     for vid in YOUTUBE_VIDEO_IDS:
         if time.monotonic() - t_start > 30:
@@ -607,7 +610,7 @@ def _try_fetch(url: str, ua: str) -> str:
         if HAS_CLOUDSCRAPER and cloudscraper is not None:
             scraper = cloudscraper.create_scraper()
             scraper.headers.update({"User-Agent": ua})
-            scraper.proxies = {"http": "", "https": ""}
+            scraper.proxies = dict(DIRECT_PROXIES)  # v4.28.0：强制直连，不受本机代理开关影响
             resp = scraper.get(url, timeout=30, stream=True)
         else:
             raise ImportError("cloudscraper not installed")
@@ -616,7 +619,8 @@ def _try_fetch(url: str, ua: str) -> str:
             "cloudscraper 失败，回退 requests: %s", _safe_exc_str(e),
             extra=_ev("fetch_fallback", {"url": _mask_url(url), "error": _safe_exc_str(e)[:200]}))
         try:
-            resp = _requests.get(url, headers={"User-Agent": ua}, timeout=30, stream=True)
+            resp = _requests.get(url, headers={"User-Agent": ua}, timeout=30, stream=True,
+                                 proxies=dict(DIRECT_PROXIES))  # v4.28.0：强制直连
         except Exception as e:
             if scraper is not None:
                 try:
@@ -684,6 +688,7 @@ def parse_subscription_url(url: str) -> list[ProxyNode]:
         try:
             if HAS_CLOUDSCRAPER and cloudscraper is not None:
                 scraper = cloudscraper.create_scraper()
+                scraper.proxies = dict(DIRECT_PROXIES)  # v4.28.0：强制直连
                 # v4.27.0：流式读取并限制体积（旧实现 resp.text 全量读入，
                 # 绕过 _SUB_MAX_BYTES 20MB 上限，恶意端点可耗尽内存）
                 resp = scraper.get(url, timeout=30, stream=True)
@@ -793,7 +798,7 @@ def _fetch_sub_usage(urls: list) -> dict:
     for url in urls:
         try:
             r = _requests.get(url, headers={"User-Agent": "ClashMeta/1.0"},
-                              timeout=20, stream=True)
+                              timeout=20, stream=True, proxies=dict(DIRECT_PROXIES))
             info = _parse_userinfo(r.headers)
             r.close()
             if info.get("download") is not None:

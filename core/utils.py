@@ -26,6 +26,13 @@ except ImportError:
     pass
 
 
+# v4.28.0：强制直连代理表。requests 语义：值为空串 = 该协议不走代理；
+# merge_environment_settings 的 setdefault 不会被环境变量/Windows 注册表系统代理覆盖，
+# send 阶段空串为假值直接走直连。工具内部请求（订阅拉取/内核下载等）一律使用本常量，
+# 保证本机代理开/关状态下数据一致。
+DIRECT_PROXIES = {"http": "", "https": ""}
+
+
 _SENSITIVE_PARAMS = {"token", "password", "passwd", "key", "secret", "auth",
                      "sub", "subid", "code", "id",
                      "sid", "user", "username", "pass", "access_token",
@@ -223,4 +230,25 @@ async def _pbar_ticker(pbar, stop_event: asyncio.Event) -> None:
     except asyncio.CancelledError:
         pass
 
-__all__ = ['HAS_CLOUDSCRAPER', 'HAS_YTDLP', '_SENSITIVE_PARAMS', '_mask_url', '_URL_IN_TEXT_RE', '_URL_REL_RE', '_safe_exc_str', '_FLAG_PAIR_RE', '_flag_to_text', '_no_verify_ssl', '_remove_prefix', 'b64decode_pad', '_str_width', '_pad_right', '_trunc_width', '_fmt_size', '_sanitize_surrogates', '_pbar_ticker']
+
+def _system_proxy_info() -> str:
+    """读取 Windows 系统代理（注册表），返回 "host:port" 或空串
+
+    仅用于提示用户本机代理当前状态（v4.28.0：工具内部请求已强制直连，
+    不受系统代理影响；TUN 模式除外）。非 Windows/未开启/读取失败返回空串，不抛异常。
+    """
+    import sys
+    if sys.platform != "win32":
+        return ""
+    try:
+        import winreg
+        with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Internet Settings") as key:
+            enabled, _ = winreg.QueryValueEx(key, "ProxyEnable")
+            server, _ = winreg.QueryValueEx(key, "ProxyServer")
+        return str(server).strip() if enabled else ""
+    except Exception:
+        return ""
+
+__all__ = ['HAS_CLOUDSCRAPER', 'HAS_YTDLP', 'DIRECT_PROXIES', '_SENSITIVE_PARAMS', '_mask_url', '_URL_IN_TEXT_RE', '_URL_REL_RE', '_safe_exc_str', '_FLAG_PAIR_RE', '_flag_to_text', '_no_verify_ssl', '_remove_prefix', 'b64decode_pad', '_str_width', '_pad_right', '_trunc_width', '_fmt_size', '_sanitize_surrogates', '_pbar_ticker', '_system_proxy_info']

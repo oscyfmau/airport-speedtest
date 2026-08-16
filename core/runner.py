@@ -195,6 +195,14 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
         }),
     )
 
+    # v4.28.0：本机系统代理状态提示（工具内部请求已强制直连，数据不受开关影响；
+    # TUN 模式会接管直连 TCP，属用户层不可绕过的例外，明确告知）
+    sys_proxy = _system_proxy_info()
+    if sys_proxy:
+        logger.info(
+            "检测到本机系统代理已开启（%s）：本工具内部请求已强制直连、不受其影响；"
+            "若本机代理为 TUN 模式，直连 TCP Ping 结果可能被其接管", sys_proxy)
+
     # Step 1: 解析订阅
     if isinstance(subscribe_url, (list, tuple)):
         urls = [u for u in subscribe_url if u]
@@ -464,12 +472,40 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
         need_stream = mode != "basic"
         need_ip = (mode == "full") and not fast
         need_web = (mode == "full") and not fast  # 标准测试/完整测速附带；网页模拟依赖 IP 归属选站点
+
+        # v4.28.0：死节点（直连 TCP 与隧道探测均不通）如实标注并跳过流媒体/IP/网页检测，
+        # 不浪费时间与 IP 源配额。tcp_probe=None（探测池不可用）不算死，照常测不误杀；
+        # streaming-only 模式无 TCP 阶段，不参与标注。
+        dead_names = set()
+        if mode != "streaming":
+            dead_names = {n.name for n in nodes
+                          if results_dict[n.name].tcp_ping is None
+                          and results_dict[n.name].tcp_probe is not True}
+            if dead_names:
+                skip_services = streaming_services or FULL_STREAMING_SERVICES
+                for name in dead_names:
+                    r = results_dict[name]
+                    if not r.error:
+                        r.error = "节点不可达"
+                    if need_stream:
+                        r.streaming = {svc["id"]: "跳过(节点不可达)" for svc in skip_services}
+                    if need_ip:
+                        r.ip_info = {"error": "节点不可达"}
+                    if need_web:
+                        r.webpage = {"avg_ms": -1, "error": "节点不可达"}
+                logger.info(
+                    "不可达节点 %d 个：已标注「节点不可达」，跳过流媒体/IP/网页检测",
+                    len(dead_names),
+                    extra=_ev("dead_nodes_skipped", {"count": len(dead_names),
+                                                     "nodes": sorted(dead_names)}))
+
         if (need_stream or need_ip or need_web) and not (mihomo.binary_path and os.path.isfile(mihomo.binary_path)):
             # 纯流媒体模式此前无二进制检查（非流媒体模式已在阶段2前拦截）
             logger.error("mihomo 不可用，跳过流媒体/IP/网页检测")
             return _finish_partial(results_dict, mode, output_mode, t_start, sort_by)
         if need_stream or need_ip or need_web:
-            node_tasks = [(n, need_stream, need_ip, need_web) for n in active_all]
+            node_tasks = [(n, need_stream, need_ip, need_web)
+                          for n in active_all if n.name not in dead_names]
             if workers > 1:
                 pool = MihomoWorkerPool(mihomo.binary_path, workers)
                 if await pool.start():
@@ -492,12 +528,13 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
                 logger.info("=" * 50)
                 logger.info(f"[{step_idx}/{len(steps)}] 流媒体/IP/网页检测（串行）")
                 logger.info("=" * 50)
+                test_nodes = [n for n in active_all if n.name not in dead_names]  # v4.28.0：死节点跳过
                 if need_stream:
-                    await run_streaming_test(mihomo, active_all, results_dict, streaming_services)
+                    await run_streaming_test(mihomo, test_nodes, results_dict, streaming_services)
                 if need_ip:
-                    await run_ip_quality_test(mihomo, active_all, results_dict)
+                    await run_ip_quality_test(mihomo, test_nodes, results_dict)
                 if need_web:
-                    await run_webpage_test(mihomo, active_all, results_dict)
+                    await run_webpage_test(mihomo, test_nodes, results_dict)
             step_idx += 1
 
     except KeyboardInterrupt:
