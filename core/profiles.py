@@ -21,6 +21,7 @@ import json
 import os
 import re
 import time
+from datetime import datetime
 
 from .config import *
 from .logging_setup import *
@@ -446,5 +447,145 @@ def node_stability_report(data: dict, window: int = 10) -> list:
     return rows
 
 
+def _is_peak_hour(ts: str) -> bool:
+    """晚高峰标注（v4.30.0）：18-23 点或周末（周六/周日）"""
+    try:
+        dt = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+    except (ValueError, TypeError):
+        return False
+    return dt.hour >= 18 or dt.weekday() >= 5
+
+
+def _load_run_json(json_file: str):
+    """读取结果 JSON 内容（缺失/损坏返回 None，调用方降级到档案 evidence）"""
+    if not json_file:
+        return None
+    try:
+        with open(os.path.join(OUTPUT_DIR, json_file), "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def _archive_entries_for_run(data: dict, run_ts: str) -> list:
+    """档案降级数据源：取 ts 匹配该 run 的证据条目（含节点名与 addr）"""
+    out = []
+    for pid, p in data["nodes"].items():
+        for e in p.get("evidence", []):
+            if e.get("ts") == run_ts:
+                out.append({"name": (p.get("names") or ["?"])[-1],
+                            "addr": p.get("addr", ""), **e})
+                break
+    return out
+
+
+def _entry_identity(e: dict) -> tuple:
+    """对齐键：name 精确 / 剥 _N 后缀 / (type,server,port)"""
+    name = e.get("name") or ""
+    addr = e.get("addr") or f"{e.get('type')}|{e.get('server')}|{e.get('port')}"
+    return name, _NAME_STRIP_RE.sub("", name), addr
+
+
+def _align_entries(list_a: list, list_b: list) -> tuple:
+    """两 run 节点对齐（复用档案匹配三级：name → 剥后缀 → (type,server,port)）
+
+    返回 (pairs[(a,b)], only_a, only_b)
+    """
+    pairs = []
+    used_b = set()
+    b_by_name = {}
+    b_by_strip = {}
+    b_by_addr = {}
+    for i, b in enumerate(list_b):
+        name, strip, addr = _entry_identity(b)
+        b_by_name.setdefault(name, []).append(i)
+        if strip:
+            b_by_strip.setdefault(strip, []).append(i)
+        b_by_addr.setdefault(addr, []).append(i)
+    for a in list_a:
+        name, strip, addr = _entry_identity(a)
+        idx = None
+        for pool in (b_by_name.get(name), b_by_strip.get(strip), b_by_addr.get(addr)):
+            if pool:
+                idx = next((i for i in pool if i not in used_b), None)
+                if idx is not None:
+                    break
+        if idx is not None:
+            used_b.add(idx)
+            pairs.append((a, list_b[idx]))
+        else:
+            pairs.append((a, None))
+    only_b = [b for i, b in enumerate(list_b) if i not in used_b]
+    return pairs, only_b
+
+
+def _speed_of(e: dict):
+    return e.get("speed_mbs") if e.get("speed_mbs") is not None else e.get("speed")
+
+
+def run_compare_report(data: dict, run_a_id: str, run_b_id: str) -> dict:
+    """结果对比（v4.30.0，二级菜单 2）：两次 run 节点对齐 + 差分
+
+    数据源：原始 JSON 优先，缺失降级档案 evidence（无组内排名）。
+    返回 {"runs": (meta_a, meta_b), "note": 晚高峰提示, "rows": [...], "only_a": n, "only_b": n}
+    """
+    runs = data.get("runs") or []
+    ra = next((r for r in runs if r["run_id"] == run_a_id), None)
+    rb = next((r for r in runs if r["run_id"] == run_b_id), None)
+    if not ra or not rb:
+        return {"error": "所选测试不在档案索引中"}
+    ja = _load_run_json(ra.get("json_file"))
+    jb = _load_run_json(rb.get("json_file"))
+    if ja and ja.get("results"):
+        list_a = ja["results"]
+        ranked_a = sorted(list_a, key=lambda e: (_speed_of(e) is None, -(_speed_of(e) or 0)))
+        rank_a = {id(e): i + 1 for i, e in enumerate(ranked_a)}
+    else:
+        list_a = _archive_entries_for_run(data, ra["ts"])
+        rank_a = {}
+    if jb and jb.get("results"):
+        list_b = jb["results"]
+        ranked_b = sorted(list_b, key=lambda e: (_speed_of(e) is None, -(_speed_of(e) or 0)))
+        rank_b = {id(e): i + 1 for i, e in enumerate(ranked_b)}
+    else:
+        list_b = _archive_entries_for_run(data, rb["ts"])
+        rank_b = {}
+
+    pairs, only_b = _align_entries(list_a, list_b)
+    only_a = sum(1 for a, b in pairs if b is None)
+    rows = []
+    for a, b in pairs:
+        sa = _speed_of(a) if a else None
+        sb = _speed_of(b) if b else None
+        name = (a or b).get("name")
+        pa = a.get("tcp_ping_ms") if a and a.get("tcp_ping_ms") is not None else (
+            a.get("tcp_ping") if a else None)
+        pb = b.get("tcp_ping_ms") if b and b.get("tcp_ping_ms") is not None else (
+            b.get("tcp_ping") if b else None)
+        ua = a.get("unlock") if a else None
+        ub = b.get("unlock") if b else None
+        ra_rank = rank_a.get(id(a)) if a else None
+        rb_rank = rank_b.get(id(b)) if b else None
+        if sa is not None and sb is not None and sa > 0:
+            delta = (sb - sa) / sa * 100
+            d_txt = f"{delta:+.0f}%" + ("↑" if delta > 20 else "↓" if delta < -20 else "")
+        else:
+            delta = None
+            d_txt = "新/缺" if (sa is None) != (sb is None) else "--"
+        rows.append({
+            "name": name,
+            "speed_a": sa, "speed_b": sb, "delta_txt": d_txt,
+            "lat_a": pa, "lat_b": pb,
+            "unlock_a": ua, "unlock_b": ub,
+            "rank_a": ra_rank, "rank_b": rb_rank,
+        })
+    note = ""
+    if _is_peak_hour(ra["ts"]) != _is_peak_hour(rb["ts"]):
+        note = "晚高峰对比：两轮中恰有一轮处于晚高峰/周末，速度差分含时段因素"
+    return {"runs": (ra, rb), "note": note, "rows": rows,
+            "only_a": only_a, "only_b": len(only_b)}
+
+
 __all__ = ['PROFILES_FILE', 'load_profiles', 'save_profiles', 'rebuild_profiles',
-           'append_run', 'match_or_create', 'node_stability_report']
+           'append_run', 'match_or_create', 'node_stability_report',
+           'run_compare_report', '_is_peak_hour']

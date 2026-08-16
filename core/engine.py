@@ -59,9 +59,11 @@ async def tcp_ping_retry(host: str, port: int, attempts: int = 3,
     return best, ok
 
 
-async def run_tcp_ping(nodes: list[ProxyNode], concurrency: int = TCP_PING_CONCURRENCY) -> dict:
+async def run_tcp_ping(nodes: list[ProxyNode], concurrency: int = TCP_PING_CONCURRENCY,
+                       attempts: int = 3, timeouts: tuple = (2.0, 3.0, 3.0)) -> dict:
     """并发 TCP Ping 所有节点（UDP/QUIC 系协议节点跳过，由 mihomo 实测可达性）
 
+    attempts/timeouts 为单节点重试参数（默认 3 次；quick 模式 1 次 2s，v4.30.0）。
     返回 {节点名: (最小延迟ms 或 None, 成功次数)}
     """
     sem = asyncio.Semaphore(concurrency)
@@ -70,7 +72,8 @@ async def run_tcp_ping(nodes: list[ProxyNode], concurrency: int = TCP_PING_CONCU
         async with sem:
             if is_udp_node(node):
                 return node, None, 0
-            latency, ok = await tcp_ping_retry(node.server, node.port)
+            latency, ok = await tcp_ping_retry(node.server, node.port, attempts=attempts,
+                                               timeouts=timeouts)
             return node, latency, ok
 
     tasks = [ping_one(n) for n in nodes]
@@ -83,8 +86,8 @@ async def run_tcp_ping(nodes: list[ProxyNode], concurrency: int = TCP_PING_CONCU
             label = "UDP跳过"
         elif latency:
             label = f"{latency:.0f}ms"
-            if ok < 3:
-                label += f"({3 - ok}丢)"
+            if ok < attempts:
+                label += f"({attempts - ok}丢)"
         else:
             label = "超时"
         pbar.set_postfix_str(f"{_flag_to_text(node.name)} {label}", refresh=False)
@@ -92,7 +95,7 @@ async def run_tcp_ping(nodes: list[ProxyNode], concurrency: int = TCP_PING_CONCU
         logger.debug(
             "TCP %s %s", node.name, label,
             extra=_ev("tcp_ping", {"node": node.name, "type": node.type,
-                                   "result": label, "loss": 3 - ok if not is_udp_node(node) else None}))
+                                   "result": label, "loss": attempts - ok if not is_udp_node(node) else None}))
     pbar.close()
     return results
 

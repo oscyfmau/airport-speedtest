@@ -8,6 +8,23 @@
 
 ---
 
+## v4.30.0
+
+### 新增
+- **快速检测 quick 模式**（菜单一级5 / `--quick`）：TCP 直连 1 次重试 2s 超时（`run_tcp_ping` 加 attempts/timeouts 参数，默认值不变）、无隧道探测；死节点独立规则（非 UDP 直连失败即标"节点不可达"并预填 4 流媒体跳过；UDP 节点不判死进流水线实测，与 v4.28 dead 规则互不干扰）；并行 `QUICK_WORKERS=4` 一条龙（MihomoWorkerPool：load_node → `tester.test_node_quick`（单连接单源 `QUICK_DOWNLOAD_URL` 5MB、窗口上限 `QUICK_WINDOW=5`s）+ `check_one_node_streaming(QUICK_STREAMING)` 4 核心平台 youtube/netflix/disney/chatgpt），池失败回退串行（`_run_quick_serial`，主引擎 switch_proxy）；跳过 IP 质量/网页模拟/补测/油管源/慢速中止
+- **quick 报告与档案口径**：报告 quick 列布局（4 流媒体列 + 平均/最高速度，不画 speed_bar 防并行数据误导）、页脚注明"快速模式（并行近似测速）"、页眉"快速检测"；档案 quality=quick、加权统计权重 ×0.5
+- **结果对比菜单**（二级2，`profiles.run_compare_report`）：最近 15 次 run 选两个横比，节点对齐（name→剥后缀→(type,server,port) 三级），输出速度/延迟/解锁/组内排名差分，变化>20% 标 ↑↓；原始 JSON 缺失降级档案 evidence（无排名数据）；`_is_peak_hour`（18-23 点或周末）标注晚高峰，两轮恰一高峰时提示时段因素
+
+### 修改
+- `engine.run_tcp_ping` 加 attempts/timeouts 参数（默认 3/(2.0,3.0,3.0) 不变；丢包显示改按 attempts 计算）
+- `_MODE_NAMES` 加 quick；CLI help 加 --quick 行
+
+### 修复
+- （无）
+
+### 移除
+- （无）
+
 ## v4.29.0
 
 ### 新增

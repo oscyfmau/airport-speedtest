@@ -173,6 +173,81 @@ async def test_node_speed(mihomo, node: ProxyNode) -> tuple:
 # 经 `from .utils import *` 注入本模块，`__all__` 保留该名以维持 `from core.tester import _pbar_ticker` 兼容
 
 
+async def test_node_quick(sess: aiohttp.ClientSession, proxy: str,
+                          node: ProxyNode) -> tuple:
+    """快速近似测速（v4.30.0，quick 模式）：单连接单源 5MB、窗口上限 5s
+
+    并行 worker 互相抢带宽，速度只作量级参考（报告与档案带 quick 标记）。
+    返回 (http_latency, speed, max_speed, per_sec, error_note)——与 test_node_speed 同构。
+    """
+    http_latency = None
+    speed = None
+    max_speed = None
+    per_sec = []   # 确保任何异常路径下都有定义
+    error_note = None
+    window_secs = QUICK_WINDOW
+    num_slots = int(window_secs)
+    try:
+        # HTTP 延迟（失败不阻塞测速）
+        try:
+            t0 = time.monotonic()
+            async with sess.get(
+                "https://www.gstatic.com/generate_204",
+                proxy=proxy,
+                timeout=aiohttp.ClientTimeout(total=HTTP_LATENCY_TIMEOUT),
+            ) as resp:
+                if resp.status == 204:
+                    http_latency = (time.monotonic() - t0) * 1000
+        except Exception:
+            pass
+
+        slot_bytes = [0] * num_slots
+        downloaded = 0
+        t_first = None
+        try:
+            async with sess.get(
+                QUICK_DOWNLOAD_URL,
+                proxy=proxy,
+                timeout=aiohttp.ClientTimeout(total=QUICK_WINDOW + 5),
+            ) as resp:
+                if resp.status == 200:
+                    async for chunk in resp.content.iter_chunked(65536):
+                        if t_first is None:
+                            t_first = time.monotonic()
+                        elapsed = time.monotonic() - t_first
+                        if elapsed >= window_secs:
+                            break  # 窗口满
+                        idx = max(0, min(int(elapsed), num_slots - 1))
+                        slot_bytes[idx] += len(chunk)
+                        downloaded += len(chunk)
+                        state._RUN_BYTES += len(chunk)
+        except Exception:
+            pass
+
+        window_time = min(time.monotonic() - t_first, window_secs) if t_first is not None else 0.0
+        if downloaded >= MIN_SPEED_BYTES and window_time > 0:
+            per_sec = []
+            full_slots = int(window_time)
+            for i in range(num_slots):
+                b = slot_bytes[i]
+                if i < full_slots:
+                    per_sec.append((b / 1.0) / (1024 * 1024))
+                elif i == full_slots:
+                    frac = window_time - full_slots
+                    if frac < 0.25:
+                        frac = 0.25  # 末槽下限防瞬时突发放大峰值
+                    per_sec.append((b / frac) / (1024 * 1024))
+                else:
+                    per_sec.append(0.0)
+            max_speed = max(per_sec) if per_sec else None
+            speed = (downloaded / window_time) / (1024 * 1024)  # 单窗口无首秒剥离（近似口径）
+        else:
+            error_note = "下载失败"  # 数据量不足（连接失败/拦截页）
+    except Exception as e:
+        logger.debug("test_node_quick failed for %s: %s", node.name, _safe_exc_str(e))
+    return http_latency, speed, max_speed, per_sec, error_note
+
+
 async def run_speed_test(mihomo: MihomoEngine, nodes: list[ProxyNode],
                          results: dict[str, TestResult]) -> None:
     """运行 HTTP 速度测试（串行：单节点单时刻，节点内部多连接）"""
@@ -240,4 +315,4 @@ async def run_speed_test(mihomo: MihomoEngine, nodes: list[ProxyNode],
             pass
         pbar.close()
 
-__all__ = ['test_node_speed', '_pbar_ticker', 'run_speed_test']
+__all__ = ['test_node_speed', 'test_node_quick', '_pbar_ticker', 'run_speed_test']

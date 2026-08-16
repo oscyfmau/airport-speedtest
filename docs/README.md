@@ -9,7 +9,7 @@
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Downloads](https://img.shields.io/github/downloads/oscyfmau/airport-speedtest/total?style=flat-square)](https://github.com/oscyfmau/airport-speedtest/releases)
 
-版本：v4.29.0 ｜ 仓库：[github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) ｜ [更新记录](CHANGELOG.md)
+版本：v4.30.0 ｜ 仓库：[github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) ｜ [更新记录](CHANGELOG.md)
 
 > 本项目由 AI 编写完成，因个人测速需求而开发，按需取用。
 
@@ -21,7 +21,7 @@
 
 ## 快速上手（三步，不会命令行也能用）
 
-1. **下载**：打开 [Releases 页面](https://github.com/oscyfmau/airport-speedtest/releases)，下载最新版的 `airport-speedtest-v4.29.0.zip`（精简包，含运行所需的全部文件）并解压，解压后先看里面的 `使用教程.txt`（会用 git 也可以 `git clone`）
+1. **下载**：打开 [Releases 页面](https://github.com/oscyfmau/airport-speedtest/releases)，下载最新版的 `airport-speedtest-v4.30.0.zip`（精简包，含运行所需的全部文件）并解压，解压后先看里面的 `使用教程.txt`（会用 git 也可以 `git clone`）
 2. **填订阅**：把解压目录里的 `代理.txt.example` 复制一份，改名为 `代理.txt`，用记事本打开，粘贴你的订阅链接后保存
    - 什么是订阅链接？机场服务商提供的网址（一般以 `https://` 开头，内含全部节点信息），在机场官网或客户端 App 的「复制订阅」处获得
 3. **运行**：
@@ -65,7 +65,7 @@ mihomo 内核无需手动下载，首次运行时自动下载到 `bin/`（约 47
 
 两种方式任选：
 
-- 不用 git：到 [Releases 页面](https://github.com/oscyfmau/airport-speedtest/releases) 下载最新版 `airport-speedtest-v4.29.0.zip`（精简包，仅含运行核心文件）并解压；需要自行改代码时再下载 `Source code (zip)`
+- 不用 git：到 [Releases 页面](https://github.com/oscyfmau/airport-speedtest/releases) 下载最新版 `airport-speedtest-v4.30.0.zip`（精简包，仅含运行核心文件）并解压；需要自行改代码时再下载 `Source code (zip)`
 - 用 git：
 
 ```bash
@@ -109,14 +109,14 @@ python core/speed_test.py https://你的订阅链接 --full   # 完整报告
 | 2. 下载速度 | TCP 检测 + HTTP 测速（最快，最省流量） |
 | 3. AI 网站 | 8 个 AI 平台检测 |
 | 4. 所有流媒体 | 33 个平台全测 |
-| 5. 快速检测 | 并行近似测速 + 4 核心流媒体（v4.30 上线，当前显示开发中） |
+| 5. 快速检测 | 并行近似测速 + 4 核心流媒体（YouTube/Netflix/Disney+/ChatGPT），速度只作量级参考（v4.30.0 起可用） |
 | 6. 更多 | 进入二级菜单 |
 | 0. 退出 | 退出程序 |
 
 | 二级菜单「更多」 | 说明 |
 |---|---|
 | 1. 节点稳定性 | 节点档案视图：常青树/过山车/新面孔/普通分层，近 N 次出现率/可达率/平均速度与波动（N 在设置页调） |
-| 2. 结果对比 | 两次测试横比（v4.30 上线，当前显示开发中） |
+| 2. 结果对比 | 两次测试横比：速度/延迟/解锁/排名差分，变化>20% 标 ↑↓，晚高峰自动标注（v4.30.0 起可用） |
 | 3. 订阅分组对比 | 多机场横评（v4.31 上线，当前显示开发中） |
 | 4. 节点筛选测速 | 按节点名关键字（如 `香港 JP`）或前 N 个（`N=10`）筛选后测速，可选简单/标准/快速模式 |
 | 5. 查看上次结果 | 打开 output 目录最新的 PNG 报告 |
@@ -309,7 +309,7 @@ mihomo 内核需要从 GitHub 下载（约 47MB），国内网络可能失败。
 - 测速会消耗节点流量（每节点约 10-30MB），"勿跑大流量"节点请谨慎全量测试
 - 网页模拟测速会在标准/完整测试中为每个节点额外增加约 3-8 秒（4 站点并发、8 秒超时）；`--fast` 模式跳过
 - TCP 丢包率为 3 次握手的失败计数，对瞬时抖动敏感，仅作参考
-- 平台支持（v4.29.0）：Linux / macOS 未经实测——mihomo 内核自动下载已修复（Windows `.zip` / Linux/macOS `.gz` 格式，x86_64/arm64 架构，下载与解压路径已实测验证）；macOS 手动下载 mihomo 放入 `bin/` 会被 Gatekeeper 拦截（"无法验证开发者"），请用首次运行自动下载或菜单 `6 更新内核`；Linux 无图形界面时报告不会自动打开（`xdg-open` 不存在，不影响测试与手动查看 `output/`），无中文字体时 PNG 报告中文显示为方框（可安装 Noto Sans CJK）
+- 平台支持（v4.30.0）：Linux / macOS 未经实测——mihomo 内核自动下载已修复（Windows `.zip` / Linux/macOS `.gz` 格式，x86_64/arm64 架构，下载与解压路径已实测验证）；macOS 手动下载 mihomo 放入 `bin/` 会被 Gatekeeper 拦截（"无法验证开发者"），请用首次运行自动下载或菜单 `6 更新内核`；Linux 无图形界面时报告不会自动打开（`xdg-open` 不存在，不影响测试与手动查看 `output/`），无中文字体时 PNG 报告中文显示为方框（可安装 Noto Sans CJK）
 
 ### 隐私说明
 

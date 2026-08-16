@@ -604,6 +604,62 @@ def _menu_stability() -> None:
         return
 
 
+def _menu_compare() -> None:
+    """结果对比（二级 2，v4.30.0）：选两次 run 横比速度/延迟/解锁/排名差分"""
+    try:
+        data = load_profiles()
+    except Exception as e:
+        print(f"[错误] 档案读取失败: {_safe_exc_str(e)}")
+        input("\n按 Enter 返回菜单...")
+        return
+    runs = data.get("runs") or []
+    if len(runs) < 2:
+        print("历史数据不足（至少需要 2 次测试）")
+        input("\n按 Enter 返回菜单...")
+        return
+    metas = list(reversed(runs[-15:]))  # 最新在前，最多 15 条
+    print("\n最近测试（[晚高峰]=18-23点或周末）：")
+    for i, r in enumerate(metas, 1):
+        tag = " [晚高峰]" if _is_peak_hour(r["ts"]) else ""
+        print(f"  {i:>2}. {r['ts']}  {_pad_right(_MODE_NAMES.get(r['mode'], r['mode']), 8)} "
+              f"{r['node_count']} 节点{tag}")
+    try:
+        inp = input("输入两个编号（如 1 3，前者为基准）: ").strip()
+    except KeyboardInterrupt:
+        return
+    parts = [p for p in inp.replace("，", ",").replace(" ", ",").split(",") if p]
+    try:
+        ia, ib = int(parts[0]) - 1, int(parts[1]) - 1
+        ra, rb = metas[ia], metas[ib]
+    except (ValueError, IndexError):
+        print("[错误] 编号无效")
+        input("\n按 Enter 返回菜单...")
+        return
+    res = run_compare_report(data, ra["run_id"], rb["run_id"])
+    if res.get("error"):
+        print(f"[错误] {res['error']}")
+        input("\n按 Enter 返回菜单...")
+        return
+    print(f"\n对比: {ra['ts']} ({ra['mode']})  →  {rb['ts']} ({rb['mode']})")
+    if res.get("note"):
+        print(f"[提示] {res['note']}")
+    print(f"{_pad_right('节点', 26)} {'基准速度':>9} {'对比速度':>9} {'变化':>7} "
+          f"{'基准延迟':>9} {'对比延迟':>9} {'排名':>6}")
+    print("-" * 82)
+    for row in res["rows"]:
+        name = _trunc_width(_flag_to_text(row["name"]), 26)
+        sa = f"{row['speed_a']:.1f}MB/s" if row["speed_a"] is not None else "--"
+        sb = f"{row['speed_b']:.1f}MB/s" if row["speed_b"] is not None else "--"
+        la = f"{row['lat_a']:.0f}ms" if row["lat_a"] is not None else "--"
+        lb = f"{row['lat_b']:.0f}ms" if row["lat_b"] is not None else "--"
+        rk = f"{row['rank_a'] or '-'}→{row['rank_b'] or '-'}"
+        print(f"{_pad_right(name, 26)} {sa:>9} {sb:>9} {row['delta_txt']:>7} "
+              f"{la:>9} {lb:>9} {rk:>6}")
+    if res.get("only_a") or res.get("only_b"):
+        print(f"（基准独有 {res['only_a']} 个 / 对比独有 {res['only_b']} 个节点未列出）")
+    input("\n按 Enter 返回菜单...")
+
+
 async def async_main():
     """异步主入口"""
     # 检查参数
@@ -624,6 +680,8 @@ async def async_main():
                 mode = "full"
             elif arg == "--fast":
                 fast = True
+            elif arg == "--quick":
+                mode = "quick"  # v4.30.0：并行近似测速 + 4 核心流媒体
             elif arg.startswith("--workers="):
                 try:
                     workers = max(1, min(int(arg.split("=", 1)[1]), MAX_WORKERS))
@@ -645,6 +703,7 @@ async def async_main():
                 print("  python core/speed_test.py <订阅URL>          轻量测速")
                 print("  python core/speed_test.py <URL> --full       完整测速")
                 print("  python core/speed_test.py <URL> --fast       快速模式(5s窗口/跳过IP检测)")
+                print("  python core/speed_test.py <URL> --quick      快速检测(并行近似测速+4核心流媒体)")
                 print("  python core/speed_test.py <URL> --workers N  流媒体/IP/网页并行数(1-8,默认4;测速恒串行)")
                 print("  python core/speed_test.py <URL> --workers=4  同上（等号形式）")
                 print("  python core/speed_test.py -i file.txt        从文件读URL")
@@ -735,8 +794,7 @@ async def async_main():
                             "3": "streaming_ai", "4": "streaming_all"}
                 last_result_path = await _menu_run_flow(mode_map[choice])
             elif choice == "5":
-                print("快速检测 开发中（v4.30 上线）")
-                input("\n按 Enter 返回菜单...")
+                last_result_path = await _menu_run_flow("quick")  # v4.30.0：快速检测
             elif choice == "6":
                 menu_level = "more"
                 continue
@@ -749,8 +807,7 @@ async def async_main():
             if choice == "1":
                 _menu_stability()
             elif choice == "2":
-                print("结果对比 开发中（v4.30 上线）")
-                input("\n按 Enter 返回菜单...")
+                _menu_compare()  # v4.30.0：结果对比
             elif choice == "3":
                 print("订阅分组对比 开发中（v4.31 上线）")
                 input("\n按 Enter 返回菜单...")

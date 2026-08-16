@@ -160,6 +160,109 @@ async def _run_node_pipeline(pool: MihomoWorkerPool, node_tasks: list,
         pbar.close()
 
 
+async def _quick_one_node(sess: aiohttp.ClientSession, proxy: str, node: ProxyNode,
+                          results_dict: dict) -> None:
+    """quick 单节点一条龙：快速测速 + 4 核心流媒体（worker 并行与串行回退共用）"""
+    http_latency, speed, max_speed, per_sec, err = await test_node_quick(sess, proxy, node)
+    if node.name in results_dict:
+        r = results_dict[node.name]
+        r.http_latency = http_latency
+        r.speed = speed
+        r.max_speed = max_speed
+        r.speed_per_sec = per_sec
+        if err and not r.error:
+            r.error = err
+    streaming = await check_one_node_streaming(sess, proxy, node, QUICK_STREAMING)
+    if node.name in results_dict:
+        results_dict[node.name].streaming = streaming
+    _log_streaming_details(node.name, streaming)
+    logger.debug(
+        "快速测速 %s 延迟=%s 平均=%s 峰值=%s %s",
+        node.name,
+        f"{http_latency:.0f}ms" if http_latency else "--",
+        f"{speed:.1f}MB/s" if speed else "--",
+        f"{max_speed:.1f}MB/s" if max_speed else "--",
+        err or "",
+        extra=_ev("speed_done", {
+            "node": node.name,
+            "http_latency_ms": http_latency,
+            "avg_mbs": speed,
+            "max_mbs": max_speed,
+            "error": err or None,
+        }))
+
+
+async def _run_quick_pipeline(pool: MihomoWorkerPool, nodes: list[ProxyNode],
+                              results_dict: dict) -> None:
+    """quick 并行一条龙：worker 依次 加载节点 → 快速测速 + 4 核心流媒体"""
+    queue: asyncio.Queue = asyncio.Queue()
+    for n in nodes:
+        await queue.put(n)
+    for _ in pool.workers:
+        await queue.put(None)  # 终止哨兵
+    ssl_ctx = _no_verify_ssl()
+    pbar = tqdm(total=len(nodes), desc="快速检测", unit="节点", mininterval=1.0, leave=False)
+
+    async def worker_loop(worker: MihomoWorker):
+        while True:
+            node = await queue.get()
+            if node is None:
+                queue.task_done()
+                return
+            try:
+                pbar.set_postfix_str(f"{_flag_to_text(node.name)} 检测中")
+                if not await worker.load_node(node):
+                    if node.name in results_dict and not results_dict[node.name].error:
+                        results_dict[node.name].error = "节点加载失败"
+                    continue
+                proxy = worker.get_proxy_url()
+                async with aiohttp.ClientSession(
+                        connector=aiohttp.TCPConnector(ssl=ssl_ctx, force_close=True),
+                        max_field_size=65536, max_line_size=65536) as sess:
+                    await _quick_one_node(sess, proxy, node, results_dict)
+                    unlocked = sum(1 for v in results_dict[node.name].streaming.values()
+                                   if isinstance(v, str) and ("解锁" in v or "可用" in v))
+                    pbar.set_postfix_str(f"{_flag_to_text(node.name)} 解锁{unlocked}/4")
+            except Exception as e:
+                if node.name in results_dict and not results_dict[node.name].error:
+                    results_dict[node.name].error = _safe_exc_str(e)
+                logger.debug("quick 节点 %s 异常: %s", node.name, _safe_exc_str(e))
+            finally:
+                queue.task_done()
+                pbar.update(1)
+
+    try:
+        await asyncio.gather(*[worker_loop(w) for w in pool.workers])
+    finally:
+        pbar.close()
+
+
+async def _run_quick_serial(mihomo: MihomoEngine, nodes: list[ProxyNode],
+                            results_dict: dict) -> None:
+    """quick 串行回退：主引擎 switch_proxy 逐节点（池不可用时）"""
+    ssl_ctx = _no_verify_ssl()
+    pbar = tqdm(total=len(nodes), desc="快速检测", unit="节点", mininterval=1.0, leave=False)
+    try:
+        for node in nodes:
+            display = _flag_to_text(node.name)
+            pbar.set_postfix_str(f"{display} 检测中...")
+            ok = await mihomo.switch_proxy(node.name)
+            if not ok:
+                if node.name in results_dict and not results_dict[node.name].error:
+                    results_dict[node.name].error = "切换失败"
+                pbar.update(1)
+                continue
+            await asyncio.sleep(0.2)
+            proxy = mihomo.get_proxy_url()
+            async with aiohttp.ClientSession(
+                    connector=aiohttp.TCPConnector(ssl=ssl_ctx, force_close=True),
+                    max_field_size=65536, max_line_size=65536) as sess:
+                await _quick_one_node(sess, proxy, node, results_dict)
+            pbar.update(1)
+    finally:
+        pbar.close()
+
+
 async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
                    fast: bool = False, workers: int = DEFAULT_WORKERS,
                    node_filter: str = "", node_limit: int = 0,
@@ -331,7 +434,61 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
     pool = None
     used_pool = False
     try:
-        if mode != "streaming":
+        if mode == "quick":
+            # v4.30.0 快速检测：TCP 1 次重试筛活 → 死节点如实标注 → 并行一条龙 → 回退串行
+            phase = "快速检测"
+            logger.info("=" * 50)
+            logger.info(f"[{step_idx}/{len(steps)}] 快速检测（并行 {QUICK_WORKERS} 路近似测速 + 4 核心流媒体）")
+            logger.info("=" * 50)
+            tcp_results = await run_tcp_ping(nodes, attempts=1, timeouts=(QUICK_TCP_TIMEOUT,))
+            for n in nodes:
+                latency, ok = tcp_results.get(n.name, (None, 0))
+                if n.name in results_dict:
+                    results_dict[n.name].tcp_ping = latency
+                    if not is_udp_node(n):
+                        results_dict[n.name].tcp_loss = 1 - ok
+            # 死节点：非 UDP 且直连失败（quick 无隧道探测；UDP 节点无法判定，不判死进流水线实测）
+            quick_dead = {n.name for n in nodes
+                          if not is_udp_node(n)
+                          and (tcp_results.get(n.name) or (None, 0))[0] is None}
+            if quick_dead:
+                for name in quick_dead:
+                    r = results_dict[name]
+                    if not r.error:
+                        r.error = "节点不可达"
+                    r.streaming = {svc["id"]: "跳过(节点不可达)" for svc in QUICK_STREAMING}
+                logger.info(
+                    "不可达节点 %d 个：已标注「节点不可达」，跳过检测",
+                    len(quick_dead),
+                    extra=_ev("dead_nodes_skipped", {"count": len(quick_dead),
+                                                     "nodes": sorted(quick_dead)}))
+            quick_alive = [n for n in nodes if n.name not in quick_dead]
+            if not quick_alive:
+                logger.error("无可用的节点，跳过后续测试")
+                return _finish_partial(results_dict, mode, output_mode, t_start, sort_by)
+            if not (mihomo.binary_path and os.path.isfile(mihomo.binary_path)):
+                logger.error("mihomo 不可用，跳过快速检测")
+                return _finish_partial(results_dict, mode, output_mode, t_start, sort_by)
+            if QUICK_WORKERS > 1:
+                pool = MihomoWorkerPool(mihomo.binary_path, QUICK_WORKERS)
+                if await pool.start():
+                    used_pool = True
+                    logger.info(
+                        f"mihomo 并行池就绪: {len(pool.workers)} workers（快速检测）",
+                        extra=_ev("worker_pool_start", {"workers": len(pool.workers)}))
+                    await _run_quick_pipeline(pool, quick_alive, results_dict)
+                else:
+                    logger.warning("并行池不可用，回退串行模式")
+            if not used_pool:
+                mihomo.generate_config(quick_alive)
+                await mihomo.start()
+                logger.info("mihomo 启动成功",
+                            extra=_ev("mihomo_start", {"api_port": mihomo.api_port,
+                                                       "mixed_port": mihomo.mixed_port}))
+                await _run_quick_serial(mihomo, quick_alive, results_dict)
+            step_idx += 1
+
+        if mode not in ("streaming", "quick"):
             phase = "TCP检测"
             logger.info("=" * 50)
             logger.info(f"[{step_idx}/{len(steps)}] TCP Ping 延迟测试")
@@ -377,19 +534,20 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
         active_speed = [n for n in nodes if n.name in reachable] if mode != "streaming" else nodes
         active_all = nodes  # 流媒体和 IP 检测用全部节点
 
-        if mode != "streaming" and not active_speed:
+        if mode not in ("streaming", "quick") and not active_speed:
             logger.error("无可用的节点，跳过后续测试")
             return _finish_partial(results_dict, mode, output_mode, t_start, sort_by)
 
-        logger.info("启动 mihomo 引擎...")
-        logger.info("=" * 50)
-        binary_ok = bool(mihomo.binary_path and os.path.isfile(mihomo.binary_path))
-        if not binary_ok:
-            logger.error("mihomo 不可用，跳过 HTTP 测速及后续测试")
-            return _finish_partial(results_dict, mode, output_mode, t_start, sort_by)
+        if mode != "quick":
+            logger.info("启动 mihomo 引擎...")
+            logger.info("=" * 50)
+            binary_ok = bool(mihomo.binary_path and os.path.isfile(mihomo.binary_path))
+            if not binary_ok:
+                logger.error("mihomo 不可用，跳过 HTTP 测速及后续测试")
+                return _finish_partial(results_dict, mode, output_mode, t_start, sort_by)
 
         # 阶段2: HTTP 测速（恒串行：单节点单时刻；节点内部 DOWNLOAD_CONNS 路并发连接）
-        if mode != "streaming" and active_speed:
+        if mode not in ("streaming", "quick") and active_speed:
             phase = "HTTP测速"
             yt_url = ""
             yt_method = "direct"
@@ -440,7 +598,7 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
             step_idx += 1
 
         # 阶段3(补测): 测速完成后，对仍超时的节点重新测 TCP（直连 + 隧道），恢复的补测速
-        if mode != "streaming":
+        if mode not in ("streaming", "quick"):
             phase = "补测超时节点"
             timeout_nodes = [n for n in nodes
                              if n.name in results_dict
@@ -498,7 +656,7 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
         # 不浪费时间与 IP 源配额。tcp_probe=None（探测池不可用）不算死，照常测不误杀；
         # streaming-only 模式无 TCP 阶段，不参与标注。
         dead_names = set()
-        if mode != "streaming":
+        if mode not in ("streaming", "quick"):
             dead_names = {n.name for n in nodes
                           if results_dict[n.name].tcp_ping is None
                           and results_dict[n.name].tcp_probe is not True}
@@ -520,11 +678,11 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
                     extra=_ev("dead_nodes_skipped", {"count": len(dead_names),
                                                      "nodes": sorted(dead_names)}))
 
-        if (need_stream or need_ip or need_web) and not (mihomo.binary_path and os.path.isfile(mihomo.binary_path)):
+        if (need_stream or need_ip or need_web) and mode != "quick" and not (mihomo.binary_path and os.path.isfile(mihomo.binary_path)):
             # 纯流媒体模式此前无二进制检查（非流媒体模式已在阶段2前拦截）
             logger.error("mihomo 不可用，跳过流媒体/IP/网页检测")
             return _finish_partial(results_dict, mode, output_mode, t_start, sort_by)
-        if need_stream or need_ip or need_web:
+        if (need_stream or need_ip or need_web) and mode != "quick":
             node_tasks = [(n, need_stream, need_ip, need_web)
                           for n in active_all if n.name not in dead_names]
             if workers > 1:

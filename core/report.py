@@ -382,6 +382,16 @@ def generate_report_image(results, mode, total_time, sort_by="default", display_
         name_map = {s["id"]:s["name"] for s in FULL_STREAMING_SERVICES}
         for sid in [s["id"] for s in FULL_STREAMING_SERVICES if s["id"] in stream_ids]:
             cols.append((sid, name_map.get(sid, sid), 64, "c"))
+    elif mode == "quick":
+        # v4.30.0 快速检测：4 核心流媒体 + 近似速度（不画每秒柱——并行数据画柱易误导）
+        cols = [("idx","#",34,"c"),("name","节点名称",180,"l"),("type","类型",68,"c"),
+                ("ping","延迟RTT",76,"c"),("http","HTTP延迟",80,"c")]
+        name_map = {s["id"]: s["name"] for s in FULL_STREAMING_SERVICES}
+        for sid in [s["id"] for s in FULL_STREAMING_SERVICES if s["id"] in stream_ids]:
+            cols.append((sid, name_map.get(sid, sid), 64, "c"))
+        if has_spd:
+            cols += [("speed","平均速度",82,"c"),("maxspeed","最高速度",82,"c")]
+        cols.append(("udp","UDP类型",58,"c"))
     else:
         cols = [("idx","#",34,"c"),("name","节点名称",180,"l")]
 
@@ -410,7 +420,8 @@ def generate_report_image(results, mode, total_time, sort_by="default", display_
 
     # 页眉
     mn = {"speed":"简单测速","basic":"简单测速","normal":"标准测试","full":"完整测速",
-          "streaming":"流媒体","streaming_ai":"AI流媒体","streaming_all":"全部流媒体"}
+          "streaming":"流媒体","streaming_ai":"AI流媒体","streaming_all":"全部流媒体",
+          "quick":"快速检测"}
     hdr = f"speed_test.py v{VERSION} | {mn.get(display_mode, display_mode)}"
     dr.text((pad,6), hdr, fill="#333", font=flg)
     dr.text((pad,24), f"订阅: {len(results)} 节点 | {time.strftime('%Y-%m-%d %H:%M:%S')}", fill=dg, font=fsm)
@@ -531,6 +542,8 @@ def generate_report_image(results, mode, total_time, sort_by="default", display_
             f" | Powered by speed_test.py v{VERSION}")
     if run_bytes is not None and mode != "streaming":
         ftr3 += f" | 本次实测下载 {_fmt_size(run_bytes)}"  # v4.29.0：页脚流量显示
+    if mode == "quick":
+        ftr3 += " | 快速模式（并行近似测速）"  # v4.30.0：明示近似口径
     if len(results) > max_rows:
         ftr3 += f" | 仅显示前 {max_rows}/{len(results)} 节点"
     dr.text((pad, y), ftr1, fill=dg, font=fsm)
