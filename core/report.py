@@ -27,7 +27,7 @@ def _get_speed_color(s: Optional[float]):
 
 
 def _bar_color(sp: float) -> tuple:
-    """柱状图配色（绝对速度分级，v4.22.0）：越慢越红、越快越绿，阈值间线性插值
+    """柱状图配色（绝对速度分级，v4.22.0 引入；v4.23.0 起仅用于退化分支——无每秒数组时按平均速度上色）
 
     7 档：0→深红、0.5→红、2→橙、6→黄、15→黄绿、30→绿、60MB/s+→深绿
     """
@@ -48,6 +48,34 @@ def _bar_color(sp: float) -> tuple:
         u, cr = ramp[i + 1]
         if l <= b <= u:
             lev = 0 if u == l else (b - l) / (u - l)
+            return tuple(int(a * (1 - lev) + bb * lev) for a, bb in zip(cl, cr))
+    return ramp[-1][1]
+
+
+def _bar_color_rel(t: float) -> tuple:
+    """柱状图配色（行内相对分级，v4.23.0）：行内最慢 t=0 → 深红、行内最快 t=1 → 深绿
+
+    与柱高共用同一 min-max 归一化，颜色跟随起伏：矮红=慢、高绿=快；
+    7 档色板在 [0,1] 等距插值，红=慢、绿=快，行内起伏一眼可读。
+    分档插值结构参考 SSRSpeedN v1.04 origin 色表（与 config.SPEED_COLORS 同源），
+    色系按要求由"绿慢蓝快"改为"红慢绿快"
+    """
+    ramp = [
+        (0.0, (178, 34, 34)),      # 0.0   → 深红（行内最慢）
+        (1 / 6, (221, 51, 51)),    # 0.167 → 红
+        (2 / 6, (221, 102, 51)),   # 0.333 → 橙
+        (3 / 6, (221, 187, 0)),    # 0.5   → 黄
+        (4 / 6, (154, 180, 34)),   # 0.667 → 黄绿
+        (5 / 6, (51, 170, 51)),    # 0.833 → 绿
+        (1.0, (0, 128, 0)),        # 1.0   → 深绿（行内最快）
+    ]
+    if t <= 0:
+        return ramp[0][1]
+    for i in range(len(ramp) - 1):
+        l, cl = ramp[i]
+        u, cr = ramp[i + 1]
+        if l <= t <= u:
+            lev = 0 if u == l else (t - l) / (u - l)
             return tuple(int(a * (1 - lev) + bb * lev) for a, bb in zip(cl, cr))
     return ramp[-1][1]
 
@@ -386,21 +414,23 @@ def generate_report_image(results, mode, total_time, sort_by="default", display_
                     bar_w = max(4, (w - 6) // n - 1)
                     bars = []
                     for i, sp in enumerate(speeds):
-                        # v4.22.0：柱高 = 行内 min-max 归一化（最慢槽 3px、最快槽满高，
-                        # 每行必有起伏；速度绝对值由颜色表达，柱子只管起伏形状）
+                        # v4.23.0：柱高与颜色共用行内 min-max 归一化（最慢槽 3px 深红、
+                        # 最快槽满高深绿，每行必有起伏；颜色跟随柱高，矮红=慢、高绿=快）
                         if span > 0:
                             ratio = (sp - row_min) / span
                             bh = 3 + int((rh - 6 - 3) * ratio)   # 3px → 20px
                         else:
-                            bh = rh - 6                            # 行内全相等（边缘情况）：满高
+                            ratio = None                          # 行内全相等（边缘情况）
+                            bh = rh - 6                            # 满高
                         bx = x + 3 + int(i * (bar_w + 1))
-                        bars.append((bx, bar_w, bh, sp))
+                        bars.append((bx, bar_w, bh, ratio))
                     # 第一遍：先把柱子立起来（浅灰底）
                     for bx, bw, bh, _ in bars:
                         dr.rectangle([(bx, y+rh-4-bh), (bx+bw, y+rh-4)], fill=(200, 200, 200))
-                    # 第二遍：按绝对速度上色（红=慢、绿=快，7 档分级）
-                    for bx, bw, bh, sp in bars:
-                        dr.rectangle([(bx, y+rh-4-bh), (bx+bw, y+rh-4)], fill=_bar_color(sp))
+                    # 第二遍：按行内相对速度上色（最慢=深红、最快=深绿；全相等=中性黄）
+                    for bx, bw, bh, ratio in bars:
+                        color = _bar_color_rel(ratio) if ratio is not None else (221, 187, 0)
+                        dr.rectangle([(bx, y+rh-4-bh), (bx+bw, y+rh-4)], fill=color)
                         dr.rectangle([(bx, y+rh-4-bh), (bx+bw, y+rh-4)], outline="#666", width=1)
                 elif r.speed is not None:
                     # 退化分支：单色条（行内满高 + 绝对速度配色）
@@ -465,4 +495,4 @@ def generate_report_image(results, mode, total_time, sort_by="default", display_
         img.close()
     return fpath
 
-__all__ = ['_get_speed_color', '_bar_color', '_fmt_ms', '_fmt_mb', '_fmt_ss', '_font', '_ctxt', 'sort_results', 'print_console_summary', 'export_results_json', 'generate_report_image']
+__all__ = ['_get_speed_color', '_bar_color', '_bar_color_rel', '_fmt_ms', '_fmt_mb', '_fmt_ss', '_font', '_ctxt', 'sort_results', 'print_console_summary', 'export_results_json', 'generate_report_image']
