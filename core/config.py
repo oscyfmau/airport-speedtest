@@ -3,7 +3,7 @@
 """配置与常量（单一数据源；v4.10 起为真定义模块）"""
 import os
 
-VERSION = "4.37.0"  # SemVer：主版本.次版本.修订号
+VERSION = "4.38.0"  # SemVer：主版本.次版本.修订号
 
 
 # 产物累积清理默认值（v4.31.0，core/profiles.cleanup_outputs；settings 持久化可覆盖）
@@ -199,6 +199,8 @@ REUSE_COLORS = {
 }
 
 
+# 流媒体服务表。检测路由只消费 id/url/name（streaming.py 按 id 查 STREAMING_CHECKERS、
+# 其余走通用探测）；"type" 字段为历史保留字段（v4.38.0 注明），当前无代码消费，勿依赖。
 CORE_STREAMING_SERVICES = [
     {"id": "youtube",   "name": "YouTube",    "url": "https://www.youtube.com",         "type": "youtube"},
     {"id": "netflix",   "name": "Netflix",    "url": "https://www.netflix.com",         "type": "netflix"},

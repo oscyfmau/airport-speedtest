@@ -173,7 +173,14 @@ def _current_settings_line() -> str:
 
 def show_menu(last_result_path: str = "", level: str = "main"):
     """显示交互菜单（v4.29.0 三级：main=一级 / more=二级 / maint=三级维护）"""
-    subprocess.call("cls" if sys.platform == "win32" else "clear", shell=True)
+    # v4.38.0：去掉 shell=True（固定字符串无注入面，但规避子进程 shell 启动开销与风格问题）
+    try:
+        if sys.platform == "win32":
+            os.system("cls")
+        else:
+            os.system("clear")
+    except Exception:
+        pass
     if level == "main":
         lines = ["1. 标准测试", "2. 下载速度", "3. AI 网站", "4. 所有流媒体",
                  "5. 快速检测(开发中)", "6. 更多", "0. 退出"]

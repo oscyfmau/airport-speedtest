@@ -52,7 +52,8 @@ async def check_youtube(session: aiohttp.ClientSession, proxy: str) -> str:
                 # 回退检测普通 YouTube 是否可访问
                 try:
                     async with session.get("https://www.youtube.com", proxy=proxy,
-                        headers=headers, timeout=aiohttp.ClientTimeout(total=8)) as r2:
+                        headers=headers,
+                        timeout=aiohttp.ClientTimeout(total=STREAMING_TEST_TIMEOUT)) as r2:
                         if r2.status == 200:
                             return "可用(CN)"
                 except Exception:
@@ -212,7 +213,7 @@ async def check_chatgpt(session: aiohttp.ClientSession, proxy: str) -> str:
         async with session.get(
                 "https://api.openai.com/v1/models", proxy=proxy,
                 headers={**headers, "Authorization": "Bearer x"},
-                timeout=aiohttp.ClientTimeout(total=8),
+                timeout=aiohttp.ClientTimeout(total=STREAMING_TEST_TIMEOUT),  # v4.38.0：统一引用常量
                 allow_redirects=False) as r:
             if r.status == 403:
                 # 不支持的国家/地区（OpenAI 以 403 unsupported_country 拒绝整个区域）
@@ -224,7 +225,7 @@ async def check_chatgpt(session: aiohttp.ClientSession, proxy: str) -> str:
             try:
                 async with session.get(
                         "https://chat.openai.com/cdn-cgi/trace", proxy=proxy,
-                        headers=headers, timeout=aiohttp.ClientTimeout(total=8),
+                        headers=headers, timeout=aiohttp.ClientTimeout(total=STREAMING_TEST_TIMEOUT),  # v4.38.0：统一引用常量
                         allow_redirects=True) as t2:
                     for line in (await t2.text()).splitlines():
                         if line.startswith("loc="):
@@ -243,7 +244,7 @@ async def check_chatgpt(session: aiohttp.ClientSession, proxy: str) -> str:
         """探测一个端点，返回 (status, text)"""
         try:
             async with session.get(url, proxy=proxy, headers=headers,
-                timeout=aiohttp.ClientTimeout(total=8),
+                timeout=aiohttp.ClientTimeout(total=STREAMING_TEST_TIMEOUT),  # v4.38.0：统一引用常量
                 allow_redirects=True) as r:
                 t = await r.text()
                 return r.status, t
@@ -284,7 +285,7 @@ async def check_claude(session: aiohttp.ClientSession, proxy: str) -> str:
                 "https://api.anthropic.com/v1/messages", proxy=proxy,
                 headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
                          "x-api-key": "x", "anthropic-version": "2023-06-01"},
-                timeout=aiohttp.ClientTimeout(total=8),
+                timeout=aiohttp.ClientTimeout(total=STREAMING_TEST_TIMEOUT),  # v4.38.0：统一引用常量
                 allow_redirects=False) as r:
             if r.status == 403:
                 return "封锁"
@@ -312,7 +313,7 @@ async def check_perplexity(session: aiohttp.ClientSession, proxy: str) -> str:
                          "Authorization": "Bearer x",
                          "Content-Type": "application/json"},
                 data="{}",
-                timeout=aiohttp.ClientTimeout(total=8),
+                timeout=aiohttp.ClientTimeout(total=STREAMING_TEST_TIMEOUT),  # v4.38.0：统一引用常量
                 allow_redirects=False) as r:
             if r.status == 403:
                 return "封锁"
@@ -342,7 +343,8 @@ async def check_generic(session: aiohttp.ClientSession, proxy: str, url: str, na
         ) as resp:
             status = resp.status
             # 有些服务返回 3xx/404 但也算可访问（如某些仅登录后可见的平台）
-            if status in (200, 201, 202, 204, 301, 302, 303, 307, 308):
+            # v4.38.0：allow_redirects=True 下最终状态永不为 3xx，移除死分支
+            if status in (200, 201, 202, 204):
                 return "可用"
             if status == 403:
                 text = await resp.text()
@@ -408,7 +410,8 @@ async def check_bilibili_tw(session: aiohttp.ClientSession, proxy: str) -> str:
                     f"https://api.bilibili.com/pgc/player/web/playurl?ep_id={ep}"
                     "&qn=0&otype=json&fnval=16&fourk=1&module=bangumi",
                     proxy=proxy, headers=headers,
-                    timeout=aiohttp.ClientTimeout(total=STREAMING_TEST_TIMEOUT),
+                    # v4.38.0：单 ep 缩短超时（total 8→5、connect 3），4 ep 串行最坏 32s→20s
+                    timeout=aiohttp.ClientTimeout(total=5, connect=3),
                 ) as resp:
                     # v4.27.0：非 200（412 风控等）归"错误"类 → 触发重试一次，
                     # 旧实现 resp.json() 抛异常被吞 → 瞬时风控被永久判"失败"
@@ -601,6 +604,9 @@ STREAMING_CHECKERS = {
     "chatgpt": check_chatgpt,
     "claude": check_claude,        # v4.33.0：api.anthropic.com 区域判别（网页被 CF 风控误杀）
     "perplexity": check_perplexity,  # v4.33.0：api.perplexity.ai 区域判别（同上）
+    # v4.38.0：hbomax 复用 check_max（HBO Max 已并入 Max，hbomax.com 重定向 max.com，
+    # 消除两列走不同判定路径导致的结果不一致）
+    "hbomax": check_max,
     "bilibili": check_bilibili,
     "bilibili_tw": check_bilibili_tw,
     "tiktok": check_tiktok,
@@ -636,9 +642,11 @@ async def check_one_node_streaming(session: aiohttp.ClientSession, proxy: str,
                                             return_exceptions=True)
         batch_dict = {}
         for item in results_list:
+            # v4.38.0：gather(return_exceptions=True) 下异常对象不是 (k,v) 元组，
+            # 由下方缺失 key 兜底补"错误(连接失败)"；元组第 2 元素恒为检测器返回值字符串
             if isinstance(item, tuple) and len(item) == 2:
                 k, v = item
-                batch_dict[k] = "错误(连接失败)" if isinstance(v, BaseException) else v
+                batch_dict[k] = v
         for s in batch:  # 兜底：任何缺失 key 视为连接失败，保证可重试/可判定
             if s["id"] not in batch_dict:
                 batch_dict[s["id"]] = "错误(连接失败)"

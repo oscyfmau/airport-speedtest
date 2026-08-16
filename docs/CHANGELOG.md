@@ -8,6 +8,41 @@
 
 ---
 
+## v4.38.0
+
+### 新增
+- `engine._win_no_window_flags()`（Windows 下 mihomo 子进程不弹控制台窗口）、`engine._drain_stderr()`（daemon 线程把子进程 stderr 读进 DEBUG 日志）
+- 内核下载候选补充 `mihomo-{plat}-compatible-{tag}.zip` / `mihomo-{plat}-go120-{tag}.gz` 变体
+
+### 修改
+- `_mark_reuse` 完全复用改按 (入口 server:port, 落地 IP) 二元组严格配对计数（A 与 B 共入口、A 与 C 共落地不再误标 A 完全复用）
+- `_heuristic_share_level` datacenter 判定改真值（`if info.get("datacenter")`，空串不再误判最高共享级）
+- `parse_ssh` 无显式端口时默认 22（此前通用默认 443）
+- `parse_subscription_url` 多 UA 结果取并集（按节点名去重；旧实现只保留节点数最多的一份，漏其它 UA 独有节点）
+- `_dedupe_nodes` 附加同 (type,server,port) 不同名的跨订阅冗余 WARNING（不删除，仅提示）
+- `hbomax` 注册进 `STREAMING_CHECKERS` 复用 `check_max`（HBO Max 已并入 Max，消除两列判定路径不一致）
+- `check_bilibili_tw` 单 ep 超时 `total` 8→5s、`connect=3`（4 ep 串行最坏 32s→20s）
+- `check_generic` 移除不可达的 3xx 分支（allow_redirects=True 下最终状态永不为 3xx）；`_run_batch` 移除死 `isinstance(v, BaseException)` 分支；AI 检测器与 youtube 内层硬编码 `total=8` 统一引用 `STREAMING_TEST_TIMEOUT`
+- 流媒体服务表 `type` 字段标注历史保留（无代码消费）
+- `engine.start` 启动失败（进程退出/API 超时）时换端口+新 secret 重试一次（端口碰撞 TOCTOU 缓解）；engine/worker 全部 Popen 加 `CREATE_NO_WINDOW` 与 stderr daemon drain
+- `switch_proxy` 非 204 响应显式重试（旧实现 break 后依赖选中校验，路径不直观）
+- `tcp_ping` 增加 finally 显式关闭 writer
+- `test_node_speed` 异常路径置 `error_note="测速异常"`（此前静默返回 None，报告无说明）
+- cli 菜单清屏由 `subprocess.call("cls", shell=True)` 改 `os.system("cls"/"clear")`（去 shell=True）
+- `_ipwho_to_info` 补注：ipwho.is 不提供 is_abuser/is_crawler 字段（风险分上限口径差，属数据源限制）
+
+### 修复
+- 复用检测误标：非同一 (入口,落地) 对的节点被标"完全复用"
+- datacenter 空串被误判共享人数 1000-10000+
+- ssh:// 无端口节点默认 443 连不通（标准 22）
+- 多 UA 订阅漏节点（只保留最大一份）
+- bilibili_tw 黑洞超时最坏 32s
+- mihomo 启动端口被瞬时占用时直接失败（无重试）
+- 测速异常时报告速度列空白无说明
+
+### 移除
+- （无；3xx 死分支与 `_run_batch` 死分支为死代码清理）
+
 ## v4.37.0
 
 ### 新增

@@ -13,6 +13,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import zipfile
 
@@ -28,21 +29,46 @@ from .models import *
 from .procs import *
 from .utils import *
 
+
+def _win_no_window_flags() -> int:
+    """Windows 下 mihomo 子进程不弹控制台窗口（其他平台返回 0）"""
+    if sys.platform == "win32":
+        return getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    return 0
+
+
+def _drain_stderr(proc: subprocess.Popen) -> None:
+    """daemon 线程持续读取子进程 stderr 到 DEBUG 日志（v4.38.0：替代 DEVNULL 吞掉排障信息；
+    不读会让管道写满阻塞子进程，故必须起 drain）"""
+    def _read():
+        try:
+            for line in proc.stderr:
+                logger.debug("mihomo stderr: %s", line.decode("utf-8", "replace").rstrip())
+        except Exception:
+            pass
+    threading.Thread(target=_read, daemon=True, name="mihomo-stderr-drain").start()
+
 async def tcp_ping(host: str, port: int, timeout: float = 3.0) -> Optional[float]:
-    """TCP 连接延迟测试，返回毫秒"""
+    """TCP 连接延迟测试，返回毫秒（v4.38.0：finally 显式关闭 writer，不留半开连接）"""
+    writer = None
     try:
         t0 = time.monotonic()
         _, writer = await asyncio.wait_for(
             asyncio.open_connection(host, port), timeout=timeout
         )
         elapsed = (time.monotonic() - t0) * 1000
-        writer.close()
-        await writer.wait_closed()
         return elapsed
     except (asyncio.TimeoutError, OSError):
         return None
     except Exception:
         return None
+    finally:
+        if writer is not None:
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
+                pass
 
 
 async def tcp_ping_retry(host: str, port: int, attempts: int = 3,
@@ -290,6 +316,7 @@ class MihomoEngine:
                 candidates = [
                     f"mihomo-{plat}-{tag}.zip",
                     f"mihomo-{plat}-v1-{tag}.zip",
+                    f"mihomo-{plat}-compatible-{tag}.zip",  # v4.38.0：兼容旧 CPU 指令集变体
                     f"mihomo-{plat}.zip",
                     f"mihomo-{plat}-alpha-{tag}.zip",
                 ]
@@ -297,6 +324,7 @@ class MihomoEngine:
                 candidates = [
                     f"mihomo-{plat}-{tag}.gz",
                     f"mihomo-{plat}-v1-{tag}.gz",
+                    f"mihomo-{plat}-go120-{tag}.gz",  # v4.38.0：go1.20 构建变体（旧 glibc）
                     f"mihomo-{plat}-go124-{tag}.gz",
                 ]
 
@@ -427,37 +455,69 @@ class MihomoEngine:
         except OSError:
             pass
         self.config_path = path
+        self._last_nodes = nodes  # v4.38.0：start 换端口重试时用
         return path
 
     async def start(self):
-        """启动 mihomo 进程"""
+        """启动 mihomo 进程（v4.38.0：端口被占/瞬时失败时换端口重试一次）"""
         if not self.binary_path:
             raise RuntimeError("mihomo 二进制不存在")
         if self.process and self._ready:
             return
-        self.process = _track_proc(subprocess.Popen(
-            [self.binary_path, "-f", self.config_path],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        ))
-        # 等待 API 就绪
-        auth = {"Authorization": f"Bearer {self.secret}"}
-        async with aiohttp.ClientSession() as sess:
-            for i in range(30):
-                if self.process.poll() is not None:
-                    # 进程已退出（配置错误/二进制损坏），无需等满 15s
-                    self._ready = False
-                    raise RuntimeError("mihomo 进程异常退出（配置或二进制问题）")
-                await asyncio.sleep(0.5)
+        for attempt in range(2):
+            proc = _track_proc(subprocess.Popen(
+                [self.binary_path, "-f", self.config_path],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,  # v4.38.0：收集 stderr 供排障（daemon drain）
+                creationflags=_win_no_window_flags(),  # v4.38.0：不弹控制台窗口
+            ))
+            self.process = proc
+            _drain_stderr(proc)
+            # 等待 API 就绪
+            auth = {"Authorization": f"Bearer {self.secret}"}
+            async with aiohttp.ClientSession() as sess:
+                ok = False
+                for i in range(30):
+                    if proc.poll() is not None:
+                        # 进程已退出（配置错误/二进制损坏），无需等满 15s
+                        self._ready = False
+                        break
+                    await asyncio.sleep(0.5)
+                    try:
+                        async with sess.get(f"http://127.0.0.1:{self.api_port}/version",
+                                            headers=auth, timeout=2) as resp:
+                            if resp.status == 200:
+                                self._ready = True
+                                ok = True
+                                break
+                    except Exception:
+                        continue
+                if ok:
+                    return
+            # 启动失败：清理进程，换端口重试一次（端口碰撞 TOCTOU / 瞬时失败）
+            if attempt == 0:
+                logger.warning("mihomo 启动失败（%s），换端口重试一次",
+                               "进程异常退出" if proc.poll() is not None else "等待 API 超时")
                 try:
-                    async with sess.get(f"http://127.0.0.1:{self.api_port}/version",
-                                        headers=auth, timeout=2) as resp:
-                        if resp.status == 200:
-                            self._ready = True
-                            return
+                    if proc.poll() is None:
+                        proc.terminate()
+                        await asyncio.wait_for(
+                            asyncio.get_running_loop().run_in_executor(None, proc.wait), timeout=5)
                 except Exception:
-                    continue
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
+                _untrack_proc(proc)
+                self.process = None
+                self._ready = False
+                self.mixed_port = MihomoEngine._find_free_port(7890)
+                self.api_port = MihomoEngine._find_free_port(19090, exclude={self.mixed_port})
+                self.secret = secrets.token_hex(16)  # 新 secret，避免旧认证残留
+                if getattr(self, "_last_nodes", None) is not None:
+                    self.generate_config(self._last_nodes)
+                continue
         self._ready = False
         raise RuntimeError("mihomo 启动超时")
 
@@ -498,7 +558,11 @@ class MihomoEngine:
                         timeout=5,
                     ) as resp:
                         if resp.status != 204:
-                            break
+                            # v4.38.0：非 204 显式重试（旧实现 break 后依赖选中校验，路径不直观）
+                            if attempt == 0:
+                                await asyncio.sleep(0.5)
+                                continue
+                            return False
                 except Exception:
                     if attempt == 0:
                         await asyncio.sleep(0.5)
@@ -508,6 +572,7 @@ class MihomoEngine:
                 if await _wait_auto_selected(self.api_port, name, secret=self.secret):
                     return True
                 if attempt == 0:
+                    await asyncio.sleep(0.5)
                     continue
         return False
 
@@ -595,6 +660,7 @@ class MihomoWorker:
         except OSError:
             pass
         self.config_path = path
+        self._last_nodes = nodes  # v4.38.0：备用（与引擎一致）
         return path
 
     async def _wait_ready(self, timeout: float = 15.0) -> bool:
@@ -621,8 +687,10 @@ class MihomoWorker:
             [self.binary_path, "-f", self.config_path],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,  # v4.38.0：收集 stderr 供排障（daemon drain）
+            creationflags=_win_no_window_flags(),  # v4.38.0：不弹控制台窗口
         ))
+        _drain_stderr(self.process)
         return await self._wait_ready()
 
     async def stop(self):
@@ -683,8 +751,10 @@ class MihomoWorker:
                     [self.binary_path, "-f", self.config_path],
                     stdin=subprocess.DEVNULL,
                     stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,  # v4.38.0：收集 stderr 供排障（daemon drain）
+                    creationflags=_win_no_window_flags(),  # v4.38.0：不弹控制台窗口
                 ))
+                _drain_stderr(self.process)
                 if not await self._wait_ready():
                     return False
         return False

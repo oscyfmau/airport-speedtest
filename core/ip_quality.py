@@ -84,7 +84,8 @@ def _heuristic_risk_score(info: dict) -> int:
 def _heuristic_share_level(info: dict) -> str:
     """估算共享人数级别"""
     if info.get("is_datacenter"):
-        if info.get("datacenter") is not None:
+        # v4.38.0：真值判断——旧 `is not None` 会把回退源的空串 datacenter 误判为最高共享级
+        if info.get("datacenter"):
             return "1000-10000+"
         return "100-1000"
     if info.get("is_proxy") or info.get("is_vpn"):
@@ -191,6 +192,8 @@ def _ipwho_to_info(data: dict) -> dict:
         info["is_vpn"] = bool(sec.get("vpn"))
         info["is_tor"] = bool(sec.get("tor"))
         info["is_mobile"] = ip_type == "mobile"
+        # v4.38.0 注明：ipwho.is 不提供 is_abuser/is_crawler 字段（保持 None），
+        # 风险评分因此比主源口径少 25/10 分上限——数据源能力限制，非实现缺陷
     info["risk_score"] = _heuristic_risk_score(info) if has_sec else None
     info["share_level"] = _heuristic_share_level(info) if has_sec else "--"
     info["is_native"] = None
@@ -335,13 +338,15 @@ async def run_ip_quality_test(mihomo: MihomoEngine, nodes: list[ProxyNode],
 
 def _mark_reuse(results: list[TestResult]) -> None:
     """复用检测四档（借鉴 SSRSpeedN：完全/中转/落地复用）：
-    - 完全复用：入口（server:port）与落地 IP 都与其他节点相同
+    - 完全复用：入口（server:port）与落地 IP 的二元组与其他节点相同（v4.38.0 起按
+      (入口,落地) 严格配对计数——旧实现 A 与 B 共入口、A 与 C 共落地即误标 A 完全复用）
     - 中转复用：入口相同、落地 IP 不同（同一台入口中转）
     - 落地复用：入口不同、落地 IP 相同（多个入口共用同一落地）
     结果写入 ip_info["reuse"]；无落地 IP 数据时不标记。O(n)。
     """
     exit_cnt: dict = {}
     entry_cnt: dict = {}
+    pair_cnt: dict = {}
     for r in results:
         ip = (r.ip_info or {}).get("ip", "")
         if not ip or not r.node.server:
@@ -349,14 +354,16 @@ def _mark_reuse(results: list[TestResult]) -> None:
         entry_key = f"{r.node.server}:{r.node.port}"  # 入口含端口：同主机不同端口不算同一入口
         exit_cnt[ip] = exit_cnt.get(ip, 0) + 1
         entry_cnt[entry_key] = entry_cnt.get(entry_key, 0) + 1
+        pair_cnt[(entry_key, ip)] = pair_cnt.get((entry_key, ip), 0) + 1
     for r in results:
         ip = (r.ip_info or {}).get("ip", "")
         if not ip:
             continue
         entry_key = f"{r.node.server}:{r.node.port}"
+        same_pair = pair_cnt.get((entry_key, ip), 0) > 1
         same_entry = entry_cnt.get(entry_key, 0) > 1
         same_exit = exit_cnt.get(ip, 0) > 1
-        if same_entry and same_exit:
+        if same_pair:
             r.ip_info["reuse"] = "完全复用"
         elif same_entry:
             r.ip_info["reuse"] = "中转复用"

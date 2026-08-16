@@ -479,9 +479,11 @@ def parse_juicity(uri: str) -> Optional[ProxyNode]:
 
 
 def parse_ssh(uri: str) -> Optional[ProxyNode]:
-    """解析 ssh://"""
+    """解析 ssh://（v4.38.0：无显式端口时按协议标准 22，不再沿用通用 443 默认）"""
     try:
         user, server, port, params, name, parsed = _parse_userhost_port(uri)
+        if not parsed.port:
+            port = 22  # ssh 标准端口
         extra = {"username": user}
         # v4.27.0：支持 authority 段密码（ssh://用户:密码@host），query password= 优先
         pwd = params.get("password", [""])[0]
@@ -497,7 +499,11 @@ def parse_ssh(uri: str) -> Optional[ProxyNode]:
 
 
 def parse_socks(uri: str) -> Optional[ProxyNode]:
-    """解析 socks5:// / socks4://"""
+    """解析 socks5:// / socks4://
+
+    v4.38.0 注明：socks4:// 输入归一为 type="socks5"（mihomo 类型白名单仅 socks5，
+    保留协议区分需要 mihomo 侧支持，属设计取舍）。
+    """
     try:
         parsed = urlparse(uri)
         extra = {}
@@ -679,7 +685,11 @@ def _try_fetch(url: str, ua: str) -> str:
 
 
 def parse_subscription_url(url: str) -> list[ProxyNode]:
-    """从订阅 URL 下载并解析节点列表，自动尝试多个 UA 找到最多节点"""
+    """从订阅 URL 下载并解析节点列表，自动尝试多个 UA
+
+    v4.38.0：多 UA 结果取并集（不同 UA 可能返回非超集节点集合，只保留最大一份会漏
+    其它 UA 独有节点），按节点名去重；全部失败时最后用 cloudscraper 再试一次。
+    """
     # 不同 UA 返回不同内容，优先用能获取最多真实节点的
     user_agents = [
         "curl/8.0",
@@ -689,6 +699,7 @@ def parse_subscription_url(url: str) -> list[ProxyNode]:
     ]
 
     best_nodes = []
+    seen_names = set()
 
     for ua in user_agents:
         try:
@@ -698,9 +709,13 @@ def parse_subscription_url(url: str) -> list[ProxyNode]:
                 logger.warning("UA %s 返回 Cloudflare 挑战页，跳过", ua)
                 continue
             nodes = parse_subscription_content(content)
-            if len(nodes) > len(best_nodes):
-                best_nodes = nodes
-            logger.info("UA %s 解析到 %d 个节点", ua, len(nodes))
+            new = 0
+            for n in nodes:
+                if n.name not in seen_names:
+                    seen_names.add(n.name)
+                    best_nodes.append(n)
+                    new += 1
+            logger.info("UA %s 解析到 %d 个节点（新增 %d）", ua, len(nodes), new)
         except Exception as e:
             logger.warning("UA %s 拉取订阅失败: %s", ua, _safe_exc_str(e))
             continue
@@ -788,7 +803,11 @@ def _sanitize_name(name: str) -> str:
 
 
 def _dedupe_nodes(nodes: list[ProxyNode]) -> list[ProxyNode]:
-    """节点名清洗 + 同名节点加后缀去重"""
+    """节点名清洗 + 同名节点加后缀去重
+
+    v4.38.0：附加同 (type,server,port) 不同名的跨订阅冗余告警（不删除——同名不同配置
+    的节点可能是不同账号，删除有风险；仅提示供用户判断）。
+    """
     seen = {}
     for n in nodes:
         n.name = _sanitize_name(n.name)
@@ -798,6 +817,17 @@ def _dedupe_nodes(nodes: list[ProxyNode]) -> list[ProxyNode]:
                 idx += 1
             n.name = f"{n.name}_{idx}"
         seen[n.name] = n
+    # 身份冗余提示：跨订阅同 server:port 同类型但不同名（常见于同一机场两份订阅）
+    ident_cnt: dict = {}
+    for n in seen.values():
+        key = (n.type, n.server, n.port)
+        ident_cnt[key] = ident_cnt.get(key, 0) + 1
+    for n in seen.values():
+        key = (n.type, n.server, n.port)
+        if ident_cnt.get(key, 0) > 1:
+            logger.warning(
+                "节点 %s 与其它节点同服务器(%s:%s)，可能重复（如需去重请检查订阅）",
+                n.name, n.server, n.port)
     return list(seen.values())
 
 
