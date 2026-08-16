@@ -9,7 +9,7 @@ Pull all nodes from an airport subscription, test latency, speed, streaming unlo
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Downloads](https://img.shields.io/github/downloads/oscyfmau/airport-speedtest/total?style=flat-square)](https://github.com/oscyfmau/airport-speedtest/releases)
 
-Version: v4.33.0 | Repository: [github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) | [Changelog](CHANGELOG.md)
+Version: v4.34.0 | Repository: [github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) | [Changelog](CHANGELOG.md)
 
 > This project was written by AI and developed for personal needs — take it as-is.
 
@@ -21,7 +21,7 @@ Version: v4.33.0 | Repository: [github.com/oscyfmau/airport-speedtest](https://g
 
 ## Quick Start (3 Steps, No Command Line Skills Needed)
 
-1. **Download**: open the [Releases page](https://github.com/oscyfmau/airport-speedtest/releases), download the latest `airport-speedtest-v4.33.0.zip` (a slim package with everything needed to run), unzip it, then read `使用教程.txt` inside first (if you know git you can also `git clone`)
+1. **Download**: open the [Releases page](https://github.com/oscyfmau/airport-speedtest/releases), download the latest `airport-speedtest-v4.34.0.zip` (a slim package with everything needed to run), unzip it, then read `使用教程.txt` inside first (if you know git you can also `git clone`)
 2. **Fill in the subscription**: in the unzipped folder, copy `代理.txt.example`, rename it to `代理.txt`, open it with Notepad, paste your subscription link and save
    - What is a subscription link? A URL provided by your airport service provider (usually starts with `https://` and contains all node info); get it from the "Copy subscription" option on the airport website or in the client app
 3. **Run**:
@@ -65,7 +65,7 @@ The mihomo core downloads automatically on first run to `bin/` (about 47MB) — 
 
 Either of the two ways:
 
-- No git: go to the [Releases page](https://github.com/oscyfmau/airport-speedtest/releases), download the latest `airport-speedtest-v4.33.0.zip` (slim package, run core files only) and unzip it; download `Source code (zip)` instead only if you want to modify the code
+- No git: go to the [Releases page](https://github.com/oscyfmau/airport-speedtest/releases), download the latest `airport-speedtest-v4.34.0.zip` (slim package, run core files only) and unzip it; download `Source code (zip)` instead only if you want to modify the code
 - With git:
 
 ```bash
@@ -239,10 +239,11 @@ The report colors follow intuition (green = fast/good, red = slow/bad). All text
 | `失败(无Premium标识)` — Failed (no Premium badge) | YouTube Premium badge not detected |
 | `送中(CN)` — CN redirect (region CN) | YouTube redirected to the mainland China version (google.cn) |
 | `封锁` — Blocked | Platform explicitly refuses access (403 or block page) |
+| `未知` — Unknown | Cannot determine (since v4.34.0: shown when the AI platform API is unreachable and the web endpoint returns a CF bot-protection 403 — no longer a false "blocked") |
 | `错误(连接失败)` — Error (connection failed) | Request could not establish a connection (node may be unreachable or timed out) |
 | `跳过(节点不可达)` — Skipped (node unreachable) | First 3 services all failed to connect for this node; judged as a dead node, remaining services not actually tested |
 
-OpenAI / Claude / Perplexity checks (v4.33.0): the web endpoints of these three apply Cloudflare bot protection to datacenter IPs with non-browser clients (supported-region nodes got false 403 "blocked"), so the API endpoints are used instead — `api.openai.com` (invalid key → 401 = region allowed, 403 = region blocked; when allowed the exit region is labeled via `cdn-cgi/trace`), `api.anthropic.com` (405/400/401 business errors = allowed, 403 = blocked), `api.perplexity.ai` (401 etc. = allowed, 403 = blocked); falls back to the web probes when the API is unreachable.
+OpenAI / Claude / Perplexity checks (v4.33.0): the web endpoints of these three apply Cloudflare bot protection to datacenter IPs with non-browser clients (supported-region nodes got false 403 "blocked"), so the API endpoints are used instead — reaching `api.openai.com`, `api.anthropic.com` or `api.perplexity.ai` at all (401/400/405/429/5xx business errors) means the region is allowed, 403 means region blocked; when allowed the exit region is labeled via `cdn-cgi/trace`. Since v4.34.0 the three checkers share the same semantics (previously chatgpt fell back to the web chain on 429/5xx and contradicted the claude/perplexity columns on the same node), and when the API is unreachable the web fallback no longer reports "blocked" (a web 403 cannot distinguish region block from bot protection, so it shows `未知` / unknown).
 
 ### IP Quality Column (standard test mode)
 

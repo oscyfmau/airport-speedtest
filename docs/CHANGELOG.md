@@ -8,6 +8,22 @@
 
 ---
 
+## v4.34.0
+
+### 新增
+- （无）
+
+### 修改
+- **AI 检测器语义统一**（`check_chatgpt`）：api.openai.com 返回 403=封锁、其余任何已到达状态（401/400/429/5xx 等）＝区域放行（此前仅 401 判定放行、其余状态落回网页探测链），放行时仍经 `chat.openai.com/cdn-cgi/trace` 标注出口地区；与 `check_claude`/`check_perplexity` 的"403=封锁、其余已到达=可用"口径一致
+- **网页探测链兜底降级**：`check_chatgpt` 兜底链不再产出"封锁"——chatgpt.com 或 chat.openai.com/favicon 任一 200=解锁、三端点全部网络失败="错误(连接失败)"（触发"错误"类重试一次）、其余（CF 403 等有响应非 200）="未知"；`check_claude`/`check_perplexity` 的通用网页兜底结果判"封锁"时同样降级"未知"（`check_generic` 本体与其余平台的 403 判定不变）
+
+### 修复
+- chatgpt 检测 429/5xx 误报：api.openai.com 返回 429/5xx 时旧逻辑落回网页探测链，数据中心 IP 被 CF 风控 403 → 误报"封锁"，同节点与 claude/perplexity 的"可用"三列自相矛盾
+- claude/perplexity 兜底误报：api.anthropic.com / api.perplexity.ai 网络不可达时回退 claude.ai / www.perplexity.ai 网页探测，数据中心 IP 被 CF 风控 403 挑战页 → 误报"封锁"
+
+### 移除
+- （无）
+
 ## v4.33.0
 
 ### 新增
@@ -16,7 +32,7 @@
 - quick 报告补回每秒速度柱（`speed_bar` 100px；柱高仅表行内起伏、柱色按绝对速度）
 
 ### 修改
-- **默认排序改为订阅顺序**：`sort_results` 的 "default" 与 "none" 同义（保持订阅原始顺序）；菜单 `_menu_choose_sort` 选项1=订阅顺序⬅默认、回车默认值改 "none"；报告页眉"排序"标签 default/none → 订阅顺序
+- **默认排序改为订阅顺序**：`sort_results` 的 "default" 与 "none" 同义（保持订阅原始顺序）；菜单 `_menu_choose_sort` 选项1=订阅顺序（默认）、回车默认值改 "none"；报告页眉"排序"标签 default/none → 订阅顺序
 - `check_chatgpt` 重写：主判别改 `https://api.openai.com/v1/models`（占位 Bearer key；401=区域放行并经 `chat.openai.com/cdn-cgi/trace` 标注出口地区、403=区域封锁、其他状态回退）；旧网页探测链保留为兜底（api.openai.com 网络不可达时）
 - **全表字体统一常规不加粗**：数值格/页眉标题弃用 `_font_bd`（函数保留）；数值列自适应余量 +14 → +20（左右各 10px）
 - quick 列布局加 `("speed_bar","每秒速度",100,"c")`（has_spd 时）

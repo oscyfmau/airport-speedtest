@@ -195,14 +195,17 @@ async def check_disney(session: aiohttp.ClientSession, proxy: str) -> str:
 
 
 async def check_chatgpt(session: aiohttp.ClientSession, proxy: str) -> str:
-    """检测 ChatGPT（v4.33.0 重写：api.openai.com 区域判别为主，网页探测链兜底）
+    """检测 ChatGPT（v4.33.0 重写：api.openai.com 区域判别为主，网页探测链兜底；
+    v4.34.0 修正：429/5xx 等非 403 状态与 claude/perplexity 同义=区域放行，
+    网页链兜底不再产出"封锁"误报）
 
     背景（2026-08 实测，用户订阅 2 份 12 节点）：chatgpt.com / chat.openai.com /
     ios.chat.openai.com 对数据中心 IP + 非浏览器 TLS 一律返回 CF 403（挑战页或
     {"type":"dc"} 风控 JSON），无法区分"区域封锁"与"机器人风控"，导致 HK/TW/SG/JP/US
     等支持区域的节点被误报为"封锁"。
-    api.openai.com 无此风控：无效 key → 401 invalid_request_error = 区域放行；
-    不支持的国家 → 403 且 body 含 unsupported_country = 区域封锁。
+    api.openai.com 无此风控：无效 key → 401 invalid_request_error 等业务错误码
+    = 已到达 API = 区域放行；不支持的国家 → 403 且 body 含 unsupported_country
+    = 区域封锁。
     """
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     try:
@@ -211,29 +214,30 @@ async def check_chatgpt(session: aiohttp.ClientSession, proxy: str) -> str:
                 headers={**headers, "Authorization": "Bearer x"},
                 timeout=aiohttp.ClientTimeout(total=8),
                 allow_redirects=False) as r:
-            if r.status == 401:
-                # 区域放行（占位 key 必然 401）：经 CF trace 取出口地区（该端点不受风控影响）
-                region = ""
-                try:
-                    async with session.get(
-                            "https://chat.openai.com/cdn-cgi/trace", proxy=proxy,
-                            headers=headers, timeout=aiohttp.ClientTimeout(total=8),
-                            allow_redirects=True) as t2:
-                        for line in (await t2.text()).splitlines():
-                            if line.startswith("loc="):
-                                region = line[4:].strip()
-                                break
-                except Exception:
-                    pass
-                return f"解锁({region})" if region else "解锁"
             if r.status == 403:
                 # 不支持的国家/地区（OpenAI 以 403 unsupported_country 拒绝整个区域）
                 return "封锁"
-            # 其他状态（429/5xx 等）：落回旧网页探测链
+            # 其余任何已到达状态（401 无效 key / 400 / 429 / 5xx 等）＝区域放行。
+            # v4.34.0：与 check_claude/check_perplexity 语义统一——此前 429/5xx 落回
+            # 网页链会因 CF 风控误报"封锁"，同节点三列自相矛盾
+            region = ""
+            try:
+                async with session.get(
+                        "https://chat.openai.com/cdn-cgi/trace", proxy=proxy,
+                        headers=headers, timeout=aiohttp.ClientTimeout(total=8),
+                        allow_redirects=True) as t2:
+                    for line in (await t2.text()).splitlines():
+                        if line.startswith("loc="):
+                            region = line[4:].strip()
+                            break
+            except Exception:
+                pass
+            return f"解锁({region})" if region else "解锁"
     except Exception:
         pass
 
-    # ---- 旧网页探测链（保留：api.openai.com 网络不可达时的兜底） ----
+    # ---- 旧网页探测链（保留：api.openai.com 网络不可达时的兜底；
+    #      v4.34.0 起不再产出"封锁"，CF 403 无法区分区域封锁与机器人风控 → "未知"） ----
 
     async def _probe(url: str) -> tuple[int, str]:
         """探测一个端点，返回 (status, text)"""
@@ -256,28 +260,19 @@ async def check_chatgpt(session: aiohttp.ClientSession, proxy: str) -> str:
     if status2 == 200:
         return "解锁"
 
-    # 试 cdn-cgi/trace 提取地区
-    _, trace = await _probe("https://chat.openai.com/cdn-cgi/trace")
-    region = ""
-    for line in trace.splitlines():
-        if line.startswith("loc="):
-            region = line[4:].strip()
-            break
+    # 再试 cdn-cgi/trace（仅用于判定"连接是否彻底失败"）
+    status3, _ = await _probe("https://chat.openai.com/cdn-cgi/trace")
 
-    # favicon 403：CF 拦截（地区封锁/风控）——v4.27.0 修复：
-    # 旧逻辑"403 + trace 有 loc → 解锁(region)"会把被封地区误报为解锁
-    # （cdn-cgi/trace 的 loc 只是 CF 边缘对出口 IP 的地理定位，不代表 OpenAI 放行）
-    if status2 == 403:
-        return "封锁"
-    # trace 有地区 → 能通
-    if region:
-        return f"解锁({region})"
-    # 全部失败
-    return "错误(连接失败)"
+    # 三个端点全部网络失败 → 连接失败（触发"错误"类结果重试）
+    if status1 == 0 and status2 == 0 and status3 == 0:
+        return "错误(连接失败)"
+    # 有 HTTP 响应但非 200：CF 已拦截（可能是区域封锁，也可能是数据中心风控），
+    # 与 v4.27.0 的教训一致（trace loc ≠ OpenAI 放行），无法判定 → 未知
+    return "未知"
 
 
 async def check_claude(session: aiohttp.ClientSession, proxy: str) -> str:
-    """检测 Claude（v4.33.0 新增专用检测器）
+    """检测 Claude（v4.33.0 新增专用检测器；v4.34.0 修正网页兜底误报）
 
     背景（2026-08 实测）：claude.ai 网页对数据中心 IP + 非浏览器 TLS 返回 CF 403
     挑战页（Just a moment...），支持区域的节点被误报"封锁"。
@@ -296,12 +291,14 @@ async def check_claude(session: aiohttp.ClientSession, proxy: str) -> str:
             return "可用"  # 已到达 Anthropic API = 区域放行（405/400/401/429/5xx 等）
     except Exception:
         pass
-    # 兜底：旧通用网页探测
-    return await check_generic(session, proxy, "https://claude.ai", "Claude")
+    # 兜底：旧通用网页探测。v4.34.0：claude.ai 网页同受 CF 机器人风控，
+    # 403 无法区分"区域封锁"与"数据中心风控"，判"封锁"降级为"未知"防误报
+    res = await check_generic(session, proxy, "https://claude.ai", "Claude")
+    return "未知" if res == "封锁" else res
 
 
 async def check_perplexity(session: aiohttp.ClientSession, proxy: str) -> str:
-    """检测 Perplexity（v4.33.0 新增专用检测器）
+    """检测 Perplexity（v4.33.0 新增专用检测器；v4.34.0 修正网页兜底误报）
 
     背景（2026-08 实测）：www.perplexity.ai 网页对数据中心 IP + 非浏览器 TLS 返回
     CF 403 挑战页，支持区域的节点被误报"封锁"。
@@ -322,8 +319,10 @@ async def check_perplexity(session: aiohttp.ClientSession, proxy: str) -> str:
             return "可用"  # 已到达 Perplexity API = 区域放行（401/400/429/5xx 等）
     except Exception:
         pass
-    # 兜底：旧通用网页探测
-    return await check_generic(session, proxy, "https://www.perplexity.ai", "Perplexity")
+    # 兜底：旧通用网页探测。v4.34.0：www.perplexity.ai 网页同受 CF 机器人风控，
+    # 403 无法区分"区域封锁"与"数据中心风控"，判"封锁"降级为"未知"防误报
+    res = await check_generic(session, proxy, "https://www.perplexity.ai", "Perplexity")
+    return "未知" if res == "封锁" else res
 
 
 async def check_generic(session: aiohttp.ClientSession, proxy: str, url: str, name: str) -> str:
