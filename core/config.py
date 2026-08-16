@@ -3,7 +3,7 @@
 """配置与常量（单一数据源；v4.10 起为真定义模块）"""
 import os
 
-VERSION = "4.23.0"  # SemVer：主版本.次版本.修订号
+VERSION = "4.24.0"  # SemVer：主版本.次版本.修订号
 
 
 MIHOMO_REPO = "MetaCubeX/mihomo"
@@ -106,8 +106,8 @@ IP_CHECK_INTERVAL = 1.0
 UDP_TYPES = {"hysteria", "hysteria2", "tuic", "juicity", "wireguard"}
 
 
-# 历史配色表（保留供外部引用；当前报告柱状图实际使用 report._bar_color_rel：
-# v4.23.0 起行内相对 7 档，t=0→深红、t=1→深绿（红=慢、绿=快），见 CLAUDE.md 描述；
+# 历史配色表（保留供外部引用；当前报告柱状图实际使用 report._bar_color：
+# v4.24.0 起绝对速度 7 档：0→深红、0.5→红、2→橙、6→黄、15→黄绿、30→绿、60MB/s+→深绿，见 CLAUDE.md 描述；
 # 本表为 SSRSpeedN v1.04 origin 色表同源（慢=浅绿→快=深蓝），仅作历史参照）
 SPEED_COLORS = [
     (0, (255, 255, 255)),        # 0       → 白色

@@ -53,7 +53,7 @@ def _bar_color(sp: float) -> tuple:
 
 
 def _bar_color_rel(t: float) -> tuple:
-    """柱状图配色（行内相对分级，v4.23.0）：行内最慢 t=0 → 深红、行内最快 t=1 → 深绿
+    """柱状图配色（行内相对分级，v4.23.0 引入；v4.24.0 起未调用，接口保留）
 
     与柱高共用同一 min-max 归一化，颜色跟随起伏：矮红=慢、高绿=快；
     7 档色板在 [0,1] 等距插值，红=慢、绿=快，行内起伏一眼可读。
@@ -414,28 +414,35 @@ def generate_report_image(results, mode, total_time, sort_by="default", display_
                     bar_w = max(4, (w - 6) // n - 1)
                     bars = []
                     for i, sp in enumerate(speeds):
-                        # v4.23.0：柱高与颜色共用行内 min-max 归一化（最慢槽 3px 深红、
-                        # 最快槽满高深绿，每行必有起伏；颜色跟随柱高，矮红=慢、高绿=快）
+                        # v4.24.0：柱高 = 行内 min-max（只管起伏形状，每行必有起伏），
+                        # 颜色 = 绝对速度（表达真实快慢，红=慢绿=快，高柱子也可以配慢色）
                         if span > 0:
                             ratio = (sp - row_min) / span
                             bh = 3 + int((rh - 6 - 3) * ratio)   # 3px → 20px
                         else:
-                            ratio = None                          # 行内全相等（边缘情况）
-                            bh = rh - 6                            # 满高
+                            bh = rh - 6                            # 行内全相等（边缘情况）：满高
                         bx = x + 3 + int(i * (bar_w + 1))
-                        bars.append((bx, bar_w, bh, ratio))
+                        bars.append((bx, bar_w, bh, sp))
                     # 第一遍：先把柱子立起来（浅灰底）
                     for bx, bw, bh, _ in bars:
                         dr.rectangle([(bx, y+rh-4-bh), (bx+bw, y+rh-4)], fill=(200, 200, 200))
-                    # 第二遍：按行内相对速度上色（最慢=深红、最快=深绿；全相等=中性黄）
-                    for bx, bw, bh, ratio in bars:
-                        color = _bar_color_rel(ratio) if ratio is not None else (221, 187, 0)
-                        dr.rectangle([(bx, y+rh-4-bh), (bx+bw, y+rh-4)], fill=color)
+                    # 第二遍：按绝对速度上色（红=慢、绿=快，7 档分级，跨行可比）
+                    for bx, bw, bh, sp in bars:
+                        dr.rectangle([(bx, y+rh-4-bh), (bx+bw, y+rh-4)], fill=_bar_color(sp))
                         dr.rectangle([(bx, y+rh-4-bh), (bx+bw, y+rh-4)], outline="#666", width=1)
                 elif r.speed is not None:
-                    # 退化分支：单色条（行内满高 + 绝对速度配色）
-                    dr.rectangle([(x+4, y+3), (x+w-4, y+rh-4)], fill=_bar_color(r.speed))
-                    dr.rectangle([(x+4, y+3), (x+w-4, y+rh-4)], outline="#666", width=1)
+                    # 退化分支（v4.24.0）：无每秒数组，画 8 根等高矮柱（12px），
+                    # 颜色用绝对速度（_bar_color）——视觉上与其他行统一为多根柱子，
+                    # 并以矮柱区分"无每秒数据"的节点
+                    n = 8
+                    bar_w = max(4, (w - 6) // n - 1)
+                    col = _bar_color(r.speed)
+                    bh = 12
+                    for i in range(n):
+                        bx = x + 3 + int(i * (bar_w + 1))
+                        dr.rectangle([(bx, y+rh-4-bh), (bx+bar_w, y+rh-4)], fill=(200, 200, 200))
+                        dr.rectangle([(bx, y+rh-4-bh), (bx+bar_w, y+rh-4)], fill=col)
+                        dr.rectangle([(bx, y+rh-4-bh), (bx+bar_w, y+rh-4)], outline="#666", width=1)
             elif cid=="ip_risk":
                 sc2 = r.ip_info.get("risk_score")
                 if sc2 is None:
