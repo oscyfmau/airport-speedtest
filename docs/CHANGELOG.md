@@ -8,6 +8,33 @@
 
 ---
 
+## v4.32.0
+
+### 新增
+- **PNG 报告视觉改版**（按定稿规格《报告图片设计方案》，仅改 `core/config.py` 与 `core/report.py` 渲染）：
+  - 版式：画布 #EBEBEB、页边距 14px、页眉 40px（标题 msyhbd 14px 居中；行2 10px 左"订阅: N 节点 | 测试耗时: Xs"右"排序: 排序名"；y=38 白色分隔线）、表头 30px #E4E4E4 列名 12px 纯黑、数据行高 speed/basic/quick 36px 其余 30px、斑马纹 #FFFFFF/#F4F4F4、内部网格线横+竖全白（先画内容后画线）、外框 #A0A0A0、页脚 54px #F1F1F1 三行等距（行1 延迟说明/quick 模式为"快速模式（并行近似测速）"、行2 节点可达统计、行3 测试时间+本次实测下载|右侧 Powered by）；全部文字纯黑 #000000 直绘无描边、报告内无颜色图例
+  - 延迟系整格色块：`LATENCY_RAMP`（0-50ms #1E9650 → 150 #96AA28 → 300 #BE8223 → 500ms+ #D2321E，帧间线性插值）；`超时`/`--`/`UDP`/`代理可达` 为 #E2E2E2 灰块
+  - 速度整格色块：`_speed_color(v, report_max)`（慢=#B42823 → 快=#287341；report_max<8MB/s 时 `SPEED_RAMP_R2G` 线性铺满 0..report_max，否则对数映射 p=log2(1+v)/log2(1+report_max)；NaN/Inf 防御为 0）；无速度显示失败原因（斑马底黑字）
+  - `_fmt_speed`：<1MB/s 显示 KB/s、<1KB/s 显示 <1KB/s
+  - 每秒速度柱恒 7 根（`_resample7` 线性插值重采样；柱高=行内 min-max 只表起伏 3px~行高-6px、柱色=绝对速度与速度格同色板、柱间 1px 白缝、无灰色背景、右边界 bx+bw-1 闭区间）；退化分支（无每秒数组）画 7 根等高 12px 矮柱
+  - 流媒体状态色块：解锁/可用 #3C9146、失败/封锁/连接失败 #C83C37、N/A #1E8CAF、未知 #6E737D、跳过(节点不可达) #919BAA、未测不填色
+  - IP 类型（家宽/移动 #3C9146、商宽/机房 #BE961E、代理/VPN/Tor #C83C37）、IP 风险（低<20 绿/中<60 黄/高 红）、复用（完全红/中转黄/落地青 #1E8CAF）三色块
+  - 数值列（延迟RTT/HTTP延迟/网页均耗/平均/最高速度）自适应列宽=max(默认宽, msyhbd 12px 文本宽+14)；序号列 speed 系 32px、normal 系 30px；每秒速度列 speed 系 100px、normal 系 76px；quick 模式不画每秒速度列，其余列序与 v4.31.0 一致
+- **色板常量**（config.py）：REPORT_PAGE_BG/REPORT_HEADER_BG/REPORT_FOOTER_BG/REPORT_GRID/REPORT_OUTER/REPORT_BLACK/REPORT_ZEBRA/REPORT_SPECIAL_BG、LATENCY_RAMP、SPEED_RAMP_R2G/SPEED_NORM/SPEED_ADAPT_MAX=8.0、STREAMING_STATUS_COLORS、IP_TYPE_COLORS、REUSE_COLORS
+- **新私有函数**（report.py）：`_ramp_lerp`/`_speed_color`/`_fmt_speed`/`_resample7`/`_font_bd`（msyhbd 优先）/`_stream_block_color`/`_ip_type_block`/`_ip_risk_block`/`_reuse_block`/`_ping_value`/`_http_value`/`_web_value`/`_speed_value`/`_maxspeed_value`
+
+### 修改
+- `_ctxt` speed/maxspeed 分支改调 `_fmt_speed`（<1MB/s 改 KB/s 显示）
+- 页眉新增排序标注（与实际行序一致，数据先经 `sort_results`）；测试耗时/排序标注从页脚移至页眉
+- 页脚改为固定三行（54px）；`本次实测下载 X` 保留在第 3 行
+- 旧柱状图实现（第一遍浅灰底+第二遍上色）替换为单遍色块直绘
+
+### 修复
+- `_reuse_block` 复用档位映射修正（中文档位名 → full/relay/landing 色键，实现与规格一致）
+
+### 移除
+- （无；`_bar_color`/`_bar_color_rel`/`_get_speed_color`/`SPEED_COLORS` 保留接口未调用）
+
 ## v4.31.0
 
 ### 新增

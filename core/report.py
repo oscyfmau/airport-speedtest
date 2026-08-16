@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 """报告生成：PNG 可视化 / JSON 导出 / 排序 / 格式化"""
 import json
+import math
 import os
 import time
 from typing import Optional
@@ -91,6 +92,146 @@ def _fmt_mb(s):
     return "--" if s is None else f"{s:.1f}MB/s"
 
 
+# ==================== v4.32.0 新视觉方案取色与格式化 ====================
+
+def _ramp_lerp(keys, v):
+    """关键帧线性插值取色"""
+    if v <= keys[0][0]:
+        return keys[0][1]
+    for (a, ca), (b, cb) in zip(keys, keys[1:]):
+        if a <= v <= b:
+            t = 0 if b == a else (v - a) / (b - a)
+            return tuple(int(ca[i] * (1 - t) + cb[i] * t) for i in range(3))
+    return keys[-1][1]
+
+
+def _speed_color(v, report_max):
+    """速度取色（分场景自适应，高低速可同图）
+    1) 全表低速度（report_max < SPEED_ADAPT_MAX=8MB/s）：线性铺满 0..report_max（红→绿全用上）；
+    2) 混合/常规场景（report_max >= 8MB/s）：对数映射 p=log2(1+v)/log2(1+report_max)
+       ——低端拉伸（0.1/1/5MB/s 各自拉开色差）、高端压缩（突刺不把慢节点挤成一片红），
+       最慢=深红、最快=深绿。
+    NaN/Inf 防御为 0。"""
+    if v is None or not math.isfinite(v):
+        v = 0
+    if report_max < SPEED_ADAPT_MAX:
+        scale = report_max / 50.0
+        return _ramp_lerp([(t * scale, c) for t, c in SPEED_RAMP_R2G], v)
+    p = math.log2(1 + v) / math.log2(1 + report_max)
+    return _ramp_lerp(SPEED_NORM, p)
+
+
+def _fmt_speed(v):
+    """速度文字：<1MB/s 用 KB/s，<1KB/s 显示 <1KB/s，否则 1 位小数 MB/s"""
+    if v is None or not math.isfinite(v):
+        return "--"
+    if v < 1.0:
+        kb = v * 1024
+        return "<1KB/s" if kb < 1 else f"{kb:.0f}KB/s"
+    return f"{v:.1f}MB/s"
+
+
+def _resample7(arr):
+    """任意长度采样数组线性插值重采样为 7 个点（保持走势形状）"""
+    n = len(arr)
+    if n == 7:
+        return list(arr)
+    out = []
+    for i in range(7):
+        t = i * (n - 1) / 6.0
+        lo, hi = int(t), min(int(t) + 1, n - 1)
+        frac = t - lo
+        out.append(arr[lo] * (1 - frac) + arr[hi] * frac)
+    return out
+
+
+def _stream_block_color(text):
+    """流媒体状态归类取色（作用于 _fmt_ss 简化后的状态串）
+    归类：待解锁 → pending；解锁/可用 → ok；N/A → na；失败/封锁/连接失败 → fail；
+    未知 → unknown；跳过 → skip；未归类（"--"/空/其他）→ None（斑马底黑字不填色）"""
+    if not text or text == "--":
+        return None
+    if "待解锁" in text:
+        return STREAMING_STATUS_COLORS["pending"]
+    if "解锁" in text or "可用" in text:
+        return STREAMING_STATUS_COLORS["ok"]
+    if text == "N/A":
+        return STREAMING_STATUS_COLORS["na"]
+    if "失败" in text or "封锁" in text or "连接失败" in text:
+        return STREAMING_STATUS_COLORS["fail"]
+    if text == "未知":
+        return STREAMING_STATUS_COLORS["unknown"]
+    if "跳过" in text:
+        return STREAMING_STATUS_COLORS["skip"]
+    return None
+
+
+def _ip_type_block(r):
+    """IP 类型色块（家宽/移动→绿、商宽/机房→黄、代理/VPN/Tor→红）；无数据 → None"""
+    d = r.ip_info
+    if d.get("error") or not d.get("ip"):
+        return None
+    # 核心风控字段（机房/代理/移动）全为 None → 数据源无风控数据
+    if (d.get("is_datacenter") is None and d.get("is_proxy") is None
+            and d.get("is_mobile") is None):
+        return None
+    if d.get("is_tor") or d.get("is_proxy") or d.get("is_vpn"):
+        return IP_TYPE_COLORS["proxy"]
+    if d.get("is_datacenter"):
+        return IP_TYPE_COLORS["datacenter"]
+    return IP_TYPE_COLORS["residential"]
+
+
+def _ip_risk_block(r):
+    """IP 风险色块（分档与 _ctxt 文本口径一致：低<20→绿、中<60→黄、高→红）；无数据 → None"""
+    d = r.ip_info
+    if d.get("error") or not d.get("ip"):
+        return None
+    sc = d.get("risk_score")
+    if sc is None:
+        return None
+    if sc < 20:
+        return STREAMING_STATUS_COLORS["ok"]
+    if sc < 60:
+        return STREAMING_STATUS_COLORS["pending"]
+    return STREAMING_STATUS_COLORS["fail"]
+
+
+def _reuse_block(r):
+    """复用色块（完全→深红、中转→深黄、落地→深青）；无数据 → None"""
+    key = {"完全复用": "full", "中转复用": "relay", "落地复用": "landing"}.get(
+        r.ip_info.get("reuse"))
+    return REUSE_COLORS.get(key) if key else None
+
+
+def _ping_value(r):
+    """延迟RTT 取色用数值（UDP/代理可达/超时 → None 走灰块）"""
+    if is_udp_node(r.node):
+        return None
+    p = r.tcp_ping
+    return p if p is not None and math.isfinite(p) else None
+
+
+def _http_value(r):
+    p = r.http_latency
+    return p if p is not None and math.isfinite(p) else None
+
+
+def _web_value(r):
+    avg = r.webpage.get("avg_ms")
+    return avg if avg and avg > 0 and math.isfinite(avg) else None
+
+
+def _speed_value(r):
+    s = r.speed
+    return s if s is not None and math.isfinite(s) else None
+
+
+def _maxspeed_value(r):
+    v = r.max_speed if r.max_speed is not None else r.speed
+    return v if v is not None and math.isfinite(v) else None
+
+
 def _fmt_ss(s):
     if not isinstance(s, str):
         return "--"  # 类型守卫：streaming 值异常（None/非字符串）不拖垮报告
@@ -136,6 +277,25 @@ def _font(size=13):
     return ImageFont.load_default()
 
 
+def _font_bd(size=12):
+    """加粗字体（v4.32.0：数值格与页眉标题用，msyhbd 优先；无加粗字体回退常规字体）"""
+    candidates = [
+        "C:/Windows/Fonts/msyhbd.ttc",
+        "C:/Windows/Fonts/simhei.ttf",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+        "/usr/share/fonts/noto-cjk/NotoSansCJK-Bold.ttc",
+        "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+        "/System/Library/Fonts/PingFang.ttc",
+    ]
+    for p in candidates:
+        if os.path.exists(p):
+            try:
+                return ImageFont.truetype(p, size)
+            except Exception:
+                pass
+    return _font(size)
+
+
 def _ctxt(cid, r):
     if cid=="idx": return ""
     if cid=="name":
@@ -160,13 +320,14 @@ def _ctxt(cid, r):
         return _fmt_ms(r.http_latency)
     if cid=="speed":
         if r.speed is not None:
-            return _fmt_mb(r.speed)
+            return _fmt_speed(r.speed)  # v4.32.0：<1MB/s 用 KB/s 显示
         if r.error:
             # v4.28.0：无速度数据时如实显示失败原因（节点不可达/切换失败/下载失败等），
             # 按显示宽度截断防长异常文本撑破列
             return _trunc_width(r.error, 10)
         return "--"
-    if cid=="maxspeed": return _fmt_mb(r.max_speed if r.max_speed is not None else r.speed)
+    if cid=="maxspeed":
+        return _fmt_speed(r.max_speed if r.max_speed is not None else r.speed)
     if cid=="ip_type":
         d=r.ip_info
         if d.get("error") or not d.get("ip"): return "--"
@@ -331,6 +492,8 @@ def generate_report_image(results, mode, total_time, sort_by="default", display_
                           report_ts: str = None, run_bytes: int = None):
     """生成 PNG 报告：mode 驱动列布局，display_mode 驱动文件名与页眉
 
+    v4.32.0 视觉改版：整格色块 + 白网格线 + 纯黑直绘文字 + 每秒恒 7 柱；
+    版式参数与取色规则见《报告图片设计方案》（REPORT_* / LATENCY_RAMP / SPEED_* 常量）。
     report_ts 为本次运行共享时间戳（缺省时函数内部生成，兼容直接调用）。
     """
     display_mode = display_mode or mode
@@ -346,7 +509,11 @@ def generate_report_image(results, mode, total_time, sort_by="default", display_
             img.close()
         return fpath
 
-    font,fsm,flg = _font(12),_font(10),_font(13)
+    font = _font(12)       # 常规 12px：表头/名称/类型/流媒体/状态格
+    fsm = _font(10)        # 页眉行2 / 序号 / 页脚行
+    fsm2 = _font(9)        # 页脚行3 右侧品牌行
+    fbd = _font_bd(12)     # 数值格 12px 加粗
+    flg = _font_bd(14)     # 页眉标题 14px 加粗
     has_ip = any(r.ip_info for r in results if r.ip_info)
     has_sp = any(r.streaming for r in results if r.streaming)
     has_web = any(r.webpage for r in results if r.webpage)
@@ -354,208 +521,237 @@ def generate_report_image(results, mode, total_time, sort_by="default", display_
     if has_sp:
         for r in results: stream_ids.update(r.streaming.keys())
     has_spd = any(r.speed is not None for r in results)
-    
-    # ---- 列布局（按模式） ----
+
+    # ---- 列布局（列序与 v4.31.0 一致，仅调整宽度与渲染） ----
+    name_map = {s["id"]: s["name"] for s in FULL_STREAMING_SERVICES}
     if mode in ("speed", "basic"):
-        cols = [("idx","#",36,"c"),("name","节点名称",210,"l"),("type","类型",72,"c"),
+        cols = [("idx","#",32,"c"),("name","节点名称",210,"l"),("type","类型",72,"c"),
                 ("ping","延迟RTT",84,"c"),("http","HTTP延迟",88,"c"),
-                ("speed","平均速度",92,"c"),("maxspeed","最大速度",92,"c"),("speed_bar","每秒速度",80,"c"),
+                ("speed","平均速度",92,"c"),("maxspeed","最高速度",92,"c"),("speed_bar","每秒速度",100,"c"),
                 ("udp","UDP类型",62,"c")]
     elif mode in ("normal","full"):
-        cols = [("idx","#",34,"c"),("name","节点名称",180,"l"),("type","类型",68,"c"),
+        cols = [("idx","#",30,"c"),("name","节点名称",180,"l"),("type","类型",68,"c"),
                 ("ping","延迟RTT",76,"c"),("http","HTTP延迟",80,"c")]
         if has_web:
             cols.append(("web_avg","网页均耗",84,"c"))
         if has_ip:
             cols += [("ip_type","IP类型",82,"c"),("ip_risk","IP风险",72,"c"),("reuse","复用",64,"c")]
         # 渲染本次实际测过的全部流媒体列（COMMON 8 个或 FULL 33 个）
-        name_map = {s["id"]: s["name"] for s in FULL_STREAMING_SERVICES}
         for sid in [s["id"] for s in FULL_STREAMING_SERVICES if s["id"] in stream_ids]:
             cols.append((sid, name_map.get(sid, sid), 64, "c"))
         if has_spd:
-            cols += [("speed","平均速度",82,"c"),("maxspeed","最高速度",82,"c"),("speed_bar","每秒速度",72,"c")]
+            cols += [("speed","平均速度",82,"c"),("maxspeed","最高速度",82,"c"),("speed_bar","每秒速度",76,"c")]
         if has_ip:
             cols.append(("asn","ASN",130,"l"))
         cols.append(("udp","UDP类型",58,"c"))
     elif mode == "streaming":
         # 纯流媒体模式：简洁，不显示测速相关列
-        cols = [("idx","#",34,"c"),("name","节点名称",180,"l"),("type","类型",68,"c")]
-        name_map = {s["id"]:s["name"] for s in FULL_STREAMING_SERVICES}
+        cols = [("idx","#",30,"c"),("name","节点名称",180,"l"),("type","类型",68,"c")]
         for sid in [s["id"] for s in FULL_STREAMING_SERVICES if s["id"] in stream_ids]:
             cols.append((sid, name_map.get(sid, sid), 64, "c"))
     elif mode == "quick":
         # v4.30.0 快速检测：4 核心流媒体 + 近似速度（不画每秒柱——并行数据画柱易误导）
-        cols = [("idx","#",34,"c"),("name","节点名称",180,"l"),("type","类型",68,"c"),
+        cols = [("idx","#",32,"c"),("name","节点名称",180,"l"),("type","类型",68,"c"),
                 ("ping","延迟RTT",76,"c"),("http","HTTP延迟",80,"c")]
-        name_map = {s["id"]: s["name"] for s in FULL_STREAMING_SERVICES}
         for sid in [s["id"] for s in FULL_STREAMING_SERVICES if s["id"] in stream_ids]:
             cols.append((sid, name_map.get(sid, sid), 64, "c"))
         if has_spd:
             cols += [("speed","平均速度",82,"c"),("maxspeed","最高速度",82,"c")]
         cols.append(("udp","UDP类型",58,"c"))
     else:
-        cols = [("idx","#",34,"c"),("name","节点名称",180,"l")]
+        cols = [("idx","#",30,"c"),("name","节点名称",180,"l")]
 
-    # 计算列宽
+    # ---- 计算列宽 ----
+    # 数值列（延迟/速度）自适应列宽 = max(默认宽, 最长文本(msyhbd 12px)宽 + 14)，数字永不被截断；
+    # 其余列沿用现有自动估宽逻辑（内容自适应 + 截断加省略号）
+    numeric_cids = {"ping", "http", "web_avg", "speed", "maxspeed"}
     cw = {}
-    for cid,title,dw,_ in cols:
+    for cid, title, dw, _ in cols:
         w = dw
         for r in results:  # 遍历全部行估算列宽（画布上限 300 行）
-            txt = _ctxt(cid,r)
-            try: tw = int(font.getlength(txt)+18)
-            except Exception: tw = int(max(dw-10, len(txt)*7+10))
-            w = max(w,tw)
+            txt = _ctxt(cid, r)
+            f = fbd if cid in numeric_cids else font
+            extra = 14 if cid in numeric_cids else 18
+            try:
+                tw = int(f.getlength(txt) + extra)
+            except Exception:
+                tw = int(max(dw - 10, len(txt) * 7 + 10))
+            w = max(w, tw)
         cw[cid] = int(w)
 
-    pad,rh,hh,fh = 14,26,40,70
+    # ---- 版式骨架（v4.32.0） ----
+    pad, hh, hdr_h, fh, gap = 14, 40, 30, 54, 2
+    rh = 36 if mode in ("speed", "basic", "quick") else 30  # 数据行高按模式
     iw = sum(cw.values())
-    tw = int(iw+pad*2)
+    tw = int(iw + pad * 2)
     # 最多显示 300 个节点，防止图片内存溢出
     max_rows = 300
     nh = min(len(results), max_rows)
-    th = int(hh + nh*rh + fh + 6)
+    th = int(hh + hdr_h + nh * rh + gap + fh)
 
-    img = Image.new("RGB", (tw,th), (245,245,245))
+    img = Image.new("RGB", (tw, th), REPORT_PAGE_BG)
     dr = ImageDraw.Draw(img)
-    lg, dg = "#DDDDDD", "#888888"
 
-    # 页眉
+    # ---- 页眉（40px）：行1 标题居中加粗，行2 左右分布，y=38 白分隔线 ----
     mn = {"speed":"简单测速","basic":"简单测速","normal":"标准测试","full":"完整测速",
           "streaming":"流媒体","streaming_ai":"AI流媒体","streaming_all":"全部流媒体",
           "quick":"快速检测"}
     hdr = f"speed_test.py v{VERSION} | {mn.get(display_mode, display_mode)}"
-    dr.text((pad,6), hdr, fill="#333", font=flg)
-    dr.text((pad,24), f"订阅: {len(results)} 节点 | {time.strftime('%Y-%m-%d %H:%M:%S')}", fill=dg, font=fsm)
-    dr.line([(pad,hh-2),(tw-pad,hh-2)], fill=lg, width=1)
-
-    y = hh
-    # 表头
-    dr.rectangle([(pad,y),(tw-pad,y+rh)], fill="#F0F0F0")
-    x = pad
-    for cid,ttl,_,al in cols:
-        w = cw[cid]; tx = x+w/2 if al=="c" else x+6
-        tw2 = dr.textlength(ttl, font=font)
-        dr.text((tx-tw2/2 if al=="c" else tx, y+6), ttl, fill="#333", font=font)
-        x += w
-    y += rh
-
-    # 数据
-    sr = sort_results(results, sort_by)
-
-    for idx, r in enumerate(sr[:nh]):  # 只画画布内的行，页脚才不会被顶出画布
-        x = pad
-        bg = "#FFF" if idx%2==0 else "#FAFAFA"
-        dr.rectangle([(pad,y),(tw-pad,y+rh)], fill=bg)
-        pv = r.tcp_ping
-        pc = "#999" if pv is None else "#22AA22" if pv<50 else "#DDBB00" if pv<150 else "#FF8800" if pv<300 else "#DD3333"
-
-        for cid,_,_,al in cols:
-            w = cw[cid]; txt = _ctxt(cid, r); fc = "#333"
-            if cid=="idx": txt=str(idx+1); fc="#666"
-            elif cid=="ping": fc=pc
-            elif cid=="http": 
-                p=r.http_latency
-                fc="#999" if p is None else "#22AA22" if p<50 else "#DDBB00" if p<150 else "#FF8800" if p<300 else "#DD3333"
-            elif cid=="speed_bar":
-                speeds = r.speed_per_sec
-                if speeds:
-                    n = len(speeds)
-                    row_mx = max(speeds)
-                    row_min = min(speeds)
-                    span = row_mx - row_min
-                    bar_w = max(4, (w - 6) // n - 1)
-                    bars = []
-                    for i, sp in enumerate(speeds):
-                        # v4.24.0：柱高 = 行内 min-max（只管起伏形状，每行必有起伏），
-                        # 颜色 = 绝对速度（表达真实快慢，红=慢绿=快，高柱子也可以配慢色）
-                        if span > 0:
-                            ratio = (sp - row_min) / span
-                            bh = 3 + int((rh - 6 - 3) * ratio)   # 3px → 20px
-                        else:
-                            bh = rh - 6                            # 行内全相等（边缘情况）：满高
-                        bx = x + 3 + int(i * (bar_w + 1))
-                        bars.append((bx, bar_w, bh, sp))
-                    # 第一遍：先把柱子立起来（浅灰底）
-                    for bx, bw, bh, _ in bars:
-                        dr.rectangle([(bx, y+rh-4-bh), (bx+bw, y+rh-4)], fill=(200, 200, 200))
-                    # 第二遍：按绝对速度上色（红=慢、绿=快，7 档分级，跨行可比）
-                    for bx, bw, bh, sp in bars:
-                        dr.rectangle([(bx, y+rh-4-bh), (bx+bw, y+rh-4)], fill=_bar_color(sp))
-                        dr.rectangle([(bx, y+rh-4-bh), (bx+bw, y+rh-4)], outline="#666", width=1)
-                elif r.speed is not None:
-                    # 退化分支（v4.24.0）：无每秒数组，画 8 根等高矮柱（12px），
-                    # 颜色用绝对速度（_bar_color）——视觉上与其他行统一为多根柱子，
-                    # 并以矮柱区分"无每秒数据"的节点
-                    n = 8
-                    bar_w = max(4, (w - 6) // n - 1)
-                    col = _bar_color(r.speed)
-                    bh = 12
-                    for i in range(n):
-                        bx = x + 3 + int(i * (bar_w + 1))
-                        dr.rectangle([(bx, y+rh-4-bh), (bx+bar_w, y+rh-4)], fill=(200, 200, 200))
-                        dr.rectangle([(bx, y+rh-4-bh), (bx+bar_w, y+rh-4)], fill=col)
-                        dr.rectangle([(bx, y+rh-4-bh), (bx+bar_w, y+rh-4)], outline="#666", width=1)
-            elif cid=="ip_risk":
-                sc2 = r.ip_info.get("risk_score")
-                if sc2 is None:
-                    fc = "#999999"  # 无风控数据（--）灰色，不按 0 分染绿
-                else:
-                    fc = "#22AA22" if sc2<30 else "#DDBB00" if sc2<60 else "#DD3333"
-            elif cid=="ip_type":
-                di = r.ip_info
-                # v4.19.0：Tor/代理/VPN 红、机房橙、家宽/移动绿
-                if di.get("is_tor") or di.get("is_proxy") or di.get("is_vpn"):
-                    fc = "#DD3333"
-                elif di.get("is_datacenter"):
-                    fc = "#DD8833"
-                else:
-                    fc = "#33AA55"
-            elif cid in r.streaming:
-                ds = _fmt_ss(txt); txt = ds
-                fc = "#22AA22" if "解锁" in ds or "可用" in ds else "#DD3333" if "失败" in ds or "封锁" in ds or ds=="N/A" else "#999"
-
-            if al=="c":
-                tw2 = dr.textlength(txt, font=font)
-                dr.text((x+(w-tw2)/2, y+5), txt, fill=fc, font=font)
-            else:
-                dr.text((x+8, y+5), txt, fill=fc, font=font)
-            x += w
-        dr.line([(pad,y+rh),(tw-pad,y+rh)], fill=lg, width=1)
-        y += rh
-
-    # 页脚（多行）
-    y += 6
-    tcp_ok = [r for r in results if r.tcp_ping is not None]
-    succ = sum(1 for r in results if r.tcp_ping is not None or r.tcp_probe)
-    avgp = sum(r.tcp_ping for r in tcp_ok) / len(tcp_ok) if tcp_ok else 0
-    ftr1 = f"TCP RTT 为单次数据交换延迟，HTTP Ping 为单次请求体感延迟。"
+    dr.text((tw / 2, 9), hdr, font=flg, fill=REPORT_BLACK, anchor="ma")
+    dr.text((pad, 27), f"订阅: {len(results)} 节点 | 测试耗时: {total_time:.0f}s",
+            font=fsm, fill=REPORT_BLACK, anchor="lm")
     sort_names = {"none":"订阅顺序","default":"最大速度降序","max_desc":"最大速度降序","max_asc":"最大速度升序",
                   "avg_desc":"平均速度降序","avg_asc":"平均速度升序",
                   "name_asc":"名称A→Z","name_desc":"名称Z→A"}
-    ftr2 = f"节点: {succ}/{len(results)} 可达 | 平均延迟: {avgp:.0f}ms | 测试耗时: {total_time:.0f}s"
+    dr.text((tw - pad, 27), f"排序: {sort_names.get(sort_by, sort_by)}",
+            font=fsm, fill=REPORT_BLACK, anchor="rm")
+    dr.line([(pad, 38), (tw - pad, 38)], fill=REPORT_GRID, width=1)
+
+    # ---- 表头行（30px，REPORT_HEADER_BG，列名 12px 纯黑居中） ----
+    y = hh
+    dr.rectangle([(pad, y), (tw - pad, y + hdr_h)], fill=REPORT_HEADER_BG)
+    x = pad
+    for cid, ttl, _, _al in cols:
+        dr.text((x + cw[cid] / 2, y + hdr_h / 2), ttl, font=font, fill=REPORT_BLACK, anchor="mm")
+        x += cw[cid]
+    y += hdr_h
+
+    # ---- report_max（渲染前计算一次，全表共用） ----
+    report_max = 0.0
+    for r in results:
+        v = r.max_speed if r.max_speed is not None else r.speed
+        if v is not None and math.isfinite(v):
+            report_max = max(report_max, v)
+
+    # ---- 数据行：先画全部内容（色块+文字+柱），网格线最后画 ----
+    sr = sort_results(results, sort_by)
+
+    def _cell(dr_, x_, y_, w_, h_, bg_):
+        dr_.rectangle([(x_, y_), (x_ + w_ - 1, y_ + h_ - 1)], fill=bg_)
+
+    for idx, r in enumerate(sr[:nh]):  # 只画画布内的行，页脚才不会被顶出画布
+        x = pad
+        zebra = REPORT_ZEBRA[idx % 2]
+        for cid, _, _, al in cols:
+            w = cw[cid]
+            txt = _ctxt(cid, r)
+            if cid == "idx":
+                _cell(dr, x, y, w, rh, zebra)
+                dr.text((x + w / 2, y + rh / 2), str(idx + 1), font=fsm,
+                        fill=REPORT_BLACK, anchor="mm")
+            elif cid == "name":
+                _cell(dr, x, y, w, rh, zebra)
+                dr.text((x + 8, y + rh / 2), txt, font=font, fill=REPORT_BLACK, anchor="lm")
+            elif cid in ("type", "udp"):
+                _cell(dr, x, y, w, rh, zebra)
+                dr.text((x + w / 2, y + rh / 2), txt, font=font, fill=REPORT_BLACK, anchor="mm")
+            elif cid == "asn":
+                _cell(dr, x, y, w, rh, zebra)
+                dr.text((x + 8, y + rh / 2), txt, font=font, fill=REPORT_BLACK, anchor="lm")
+            elif cid in ("ping", "http", "web_avg"):
+                # 延迟系整格色块：快绿慢红；超时/--/UDP/代理可达 → 灰块
+                if cid == "ping":
+                    v = _ping_value(r)
+                elif cid == "http":
+                    v = _http_value(r)
+                else:
+                    v = _web_value(r)
+                bg = _ramp_lerp(LATENCY_RAMP, v) if v is not None else REPORT_SPECIAL_BG
+                _cell(dr, x, y, w, rh, bg)
+                dr.text((x + w / 2, y + rh / 2), txt, font=fbd, fill=REPORT_BLACK, anchor="mm")
+            elif cid in ("speed", "maxspeed"):
+                # 速度整格色块：慢红快绿（全表自适应）；无速度 → 斑马底黑字（失败原因）
+                v = _speed_value(r) if cid == "speed" else _maxspeed_value(r)
+                bg = _speed_color(v, report_max) if v is not None else zebra
+                _cell(dr, x, y, w, rh, bg)
+                dr.text((x + w / 2, y + rh / 2), txt, font=fbd, fill=REPORT_BLACK, anchor="mm")
+            elif cid == "speed_bar":
+                # 每秒速度柱：恒 7 根，直接落在斑马底上（无灰色背景）；柱高=行内起伏、柱色=绝对速度
+                _cell(dr, x, y, w, rh, zebra)
+                speeds = [s for s in (r.speed_per_sec or [])
+                          if isinstance(s, (int, float)) and math.isfinite(s)]
+                if speeds:
+                    speeds = _resample7(speeds)
+                    row_mx, row_mn = max(speeds), min(speeds)
+                    span = row_mx - row_mn
+                    n = 7
+                    bw = max(1, (w - 5 - n) // n)  # 7 柱 + 1px 白缝恒不溢出列宽
+                    for i, sp in enumerate(speeds):
+                        ratio = (sp - row_mn) / span if span > 0 else 1.0
+                        bh = 3 + int((rh - 6 - 3) * ratio)   # 3px ~ rh-6px（只表行内起伏形状）
+                        bx = x + 3 + i * (bw + 1)
+                        # 右边界必须 bx+bw-1：PIL rectangle 右下角为闭区间，写 bx+bw 会盖掉 1px 白缝
+                        dr.rectangle([(bx, y + rh - 3 - bh), (bx + bw - 1, y + rh - 3)],
+                                     fill=_speed_color(sp, report_max))
+                elif _speed_value(r) is not None:
+                    # 退化分支：无每秒数组，画 7 根等高 12px 矮柱，颜色统一 = 平均速度
+                    bw = max(1, (w - 5 - 7) // 7)
+                    col = _speed_color(r.speed, report_max)
+                    bh = 12
+                    for i in range(7):
+                        bx = x + 3 + i * (bw + 1)
+                        dr.rectangle([(bx, y + rh - 3 - bh), (bx + bw - 1, y + rh - 3)], fill=col)
+            elif cid in ("ip_type", "ip_risk", "reuse"):
+                # 状态色块：IP类型 / IP风险 / 复用；无数据 → 斑马底黑字
+                if cid == "ip_type":
+                    bg = _ip_type_block(r)
+                elif cid == "ip_risk":
+                    bg = _ip_risk_block(r)
+                else:
+                    bg = _reuse_block(r)
+                _cell(dr, x, y, w, rh, bg or zebra)
+                dr.text((x + w / 2, y + rh / 2), txt, font=font, fill=REPORT_BLACK, anchor="mm")
+            else:
+                # 流媒体列（txt 已经 _fmt_ss 简化）：按状态归类填色，未归类 → 斑马底黑字
+                bg = _stream_block_color(txt)
+                _cell(dr, x, y, w, rh, bg or zebra)
+                dr.text((x + w / 2, y + rh / 2), txt, font=font, fill=REPORT_BLACK, anchor="mm")
+            x += w
+        y += rh
+
+    # ---- 网格线（先内容、后画线：顺序不可反，否则横线会被下一行填充覆盖） ----
+    table_bottom = hh + hdr_h + nh * rh - 1
+    bx = pad
+    for cid, _, _, _ in cols[:-1]:
+        bx += cw[cid]
+        dr.line([(bx - 1, hh), (bx - 1, table_bottom)], fill=REPORT_GRID, width=1)
+    for k in range(nh + 1):
+        hy = hh + hdr_h + k * rh - 1
+        dr.line([(pad, hy), (tw - pad, hy)], fill=REPORT_GRID, width=1)
+
+    # ---- 页脚（54px，3 行等距，距数据区 2px） ----
+    y += gap
+    dr.rectangle([(pad, y), (tw - pad, y + fh)], fill=REPORT_FOOTER_BG)
+    ftr1 = ("快速模式（并行近似测速）" if mode == "quick"
+            else "TCP RTT 为单次数据交换延迟，HTTP Ping 为单次请求体感延迟。")
+    dr.text((pad + 6, y + 6), ftr1, font=fsm, fill=REPORT_BLACK, anchor="lm")
+    tcp_ok = [r for r in results if r.tcp_ping is not None]
+    succ = sum(1 for r in results if r.tcp_ping is not None or r.tcp_probe)
+    avgp = sum(r.tcp_ping for r in tcp_ok) / len(tcp_ok) if tcp_ok else 0
+    ftr2 = f"节点: {succ}/{len(results)} 可达 | 平均延迟: {avgp:.0f}ms"
     udp_n = sum(1 for r in results if is_udp_node(r.node))
     if udp_n:
         ftr2 += f" | UDP节点: {udp_n} 个(经HTTP实测)"
-    ftr2 += f" | 排序: {sort_names.get(sort_by, sort_by)}"
+    dr.text((pad + 6, y + 20), ftr2, font=fsm, fill=REPORT_BLACK, anchor="lm")
     # 本地时区名（不用硬编码 CST：非中国时区用户标注才正确）
     tz_name = time.strftime("%Z") or "本地时间"
-    ftr3 = (f"测试时间: {time.strftime('%Y-%m-%d %H:%M:%S')} ({tz_name})"
-            f" | Powered by speed_test.py v{VERSION}")
+    ftr3 = f"测试时间: {time.strftime('%Y-%m-%d %H:%M:%S')} ({tz_name})"
     if run_bytes is not None and mode != "streaming":
         ftr3 += f" | 本次实测下载 {_fmt_size(run_bytes)}"  # v4.29.0：页脚流量显示
-    if mode == "quick":
-        ftr3 += " | 快速模式（并行近似测速）"  # v4.30.0：明示近似口径
     if len(results) > max_rows:
         ftr3 += f" | 仅显示前 {max_rows}/{len(results)} 节点"
-    dr.text((pad, y), ftr1, fill=dg, font=fsm)
-    dr.text((pad, y+14), ftr2, fill=dg, font=fsm)
-    dr.text((pad, y+28), ftr3, fill=dg, font=fsm)
-    # 调整页脚高度
-    dr.rectangle([(pad,0),(tw-pad,th-1)], outline="#CCC", width=1)
+    dr.text((pad + 6, y + 34), ftr3, font=fsm, fill=REPORT_BLACK, anchor="lm")
+    dr.text((tw - pad - 6, y + 34), f"Powered by speed_test.py v{VERSION}",
+            font=fsm2, fill=REPORT_BLACK, anchor="rm")
+    # 外框 REPORT_OUTER（最后画）
+    dr.rectangle([(0, 0), (tw - 1, th - 1)], outline=REPORT_OUTER, width=1)
     try:
         img.save(fpath)
     finally:
         img.close()
     return fpath
 
-__all__ = ['_get_speed_color', '_bar_color', '_bar_color_rel', '_fmt_ms', '_fmt_mb', '_fmt_ss', '_font', '_ctxt', 'sort_results', 'print_console_summary', 'export_results_json', 'generate_report_image', '_new_report_timestamp']
+__all__ = ['_get_speed_color', '_bar_color', '_bar_color_rel', '_fmt_ms', '_fmt_mb', '_fmt_ss', '_font',
+           '_font_bd', '_ramp_lerp', '_speed_color', '_fmt_speed', '_resample7', '_stream_block_color',
+           '_ctxt', 'sort_results', 'print_console_summary', 'export_results_json',
+           'generate_report_image', '_new_report_timestamp']

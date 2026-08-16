@@ -9,7 +9,7 @@ Pull all nodes from an airport subscription, test latency, speed, streaming unlo
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Downloads](https://img.shields.io/github/downloads/oscyfmau/airport-speedtest/total?style=flat-square)](https://github.com/oscyfmau/airport-speedtest/releases)
 
-Version: v4.31.0 | Repository: [github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) | [Changelog](CHANGELOG.md)
+Version: v4.32.0 | Repository: [github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) | [Changelog](CHANGELOG.md)
 
 > This project was written by AI and developed for personal needs — take it as-is.
 
@@ -21,7 +21,7 @@ Version: v4.31.0 | Repository: [github.com/oscyfmau/airport-speedtest](https://g
 
 ## Quick Start (3 Steps, No Command Line Skills Needed)
 
-1. **Download**: open the [Releases page](https://github.com/oscyfmau/airport-speedtest/releases), download the latest `airport-speedtest-v4.31.0.zip` (a slim package with everything needed to run), unzip it, then read `使用教程.txt` inside first (if you know git you can also `git clone`)
+1. **Download**: open the [Releases page](https://github.com/oscyfmau/airport-speedtest/releases), download the latest `airport-speedtest-v4.32.0.zip` (a slim package with everything needed to run), unzip it, then read `使用教程.txt` inside first (if you know git you can also `git clone`)
 2. **Fill in the subscription**: in the unzipped folder, copy `代理.txt.example`, rename it to `代理.txt`, open it with Notepad, paste your subscription link and save
    - What is a subscription link? A URL provided by your airport service provider (usually starts with `https://` and contains all node info); get it from the "Copy subscription" option on the airport website or in the client app
 3. **Run**:
@@ -47,7 +47,7 @@ The mihomo core downloads automatically on first run to `bin/` (about 47MB) — 
 - Reuse detection in 4 tiers: full reuse / transit reuse / exit reuse — spot shared airport lines at a glance (inspired by SSRSpeedN)
 - Web page simulation: 4 representative sites loaded concurrently, first-byte latency recorded; CN exits auto-switch to domestic sites (Baidu/Bilibili/Tencent)
 - Retest mechanism: timed-out nodes are retested before the report; recovered nodes get a re-run speed test
-- Output: PNG visual report (bar charts / risk colors / reuse marks) + JSON data + JSONL structured logs (subscription tokens auto-masked)
+- Output: PNG visual report (full-cell color blocks + per-second speed bars + white grid lines) + JSON data + JSONL structured logs (subscription tokens auto-masked)
 - Console experience: per-UA feedback while parsing the subscription, real-time per-node result lines during speed tests, per-stage summaries, and a TOP-5 console ranking at the end (results visible even without opening the PNG); progress bars disappear after each stage without residue
 - Menu management: filtered speed tests (by node-name keywords / first N nodes), history management (open/delete reports), subscription management (masked view/add/delete), settings page (speed window / parallelism / auto-open report, persisted across sessions), environment info page
 
@@ -65,7 +65,7 @@ The mihomo core downloads automatically on first run to `bin/` (about 47MB) — 
 
 Either of the two ways:
 
-- No git: go to the [Releases page](https://github.com/oscyfmau/airport-speedtest/releases), download the latest `airport-speedtest-v4.31.0.zip` (slim package, run core files only) and unzip it; download `Source code (zip)` instead only if you want to modify the code
+- No git: go to the [Releases page](https://github.com/oscyfmau/airport-speedtest/releases), download the latest `airport-speedtest-v4.32.0.zip` (slim package, run core files only) and unzip it; download `Source code (zip)` instead only if you want to modify the code
 - With git:
 
 ```bash
@@ -169,6 +169,20 @@ Subscription URL(s) (captures subscription-userinfo) → parse with multiple UA 
 
 ## Report Terminology
 
+The report colors follow intuition (green = fast/good, red = slow/bad). All text is drawn in pure black with no outline, and no color legend is printed inside the report; full-cell color blocks express quality, numbers are only for precise reading.
+
+### Color Meaning (v4.32.0)
+
+| Column | Color block |
+|---|---|
+| RTT / HTTP latency / Web Avg | Full-cell block: ≤50ms green `#1E9650` → 500ms+ deep red `#D2321E` (linear interpolation between keyframes); `Timeout`/`--`/`UDP`/`Proxy reachable` get a gray block |
+| Avg / Max speed | Full-cell block: slow = deep red `#B42823` → fast = deep green `#287341`; when the report max speed is <8MB/s the ramp is stretched linearly across 0..max (slow nodes still get distinct colors), otherwise a log mapping is used (a spike does not squash slow nodes into one red); nodes without speed show the failure reason (zebra background, black text) |
+| Streaming | Unlocked/Available = deep green, Failed/Blocked/Connection failed = deep red, N/A = deep cyan, Unknown = mid gray, Skipped (node unreachable) = gray-blue, untested = no fill |
+| IP type | Residential/Mobile = green, Business/DC = yellow, Proxy/VPN/Tor = red |
+| IP risk | Low (<20) = green, Medium (20-59) = yellow, High (60+) = red |
+| Reuse | Full reuse = red, Transit reuse = yellow, Exit reuse = cyan |
+| Per-second bars | Bar color = absolute speed (same ramp as the speed cells); bar height = in-row variation shape (not speed) |
+
 ### Latency & Reachability Column
 
 | Display | Meaning |
@@ -194,10 +208,11 @@ Subscription URL(s) (captures subscription-userinfo) → parse with multiple UA 
 |---|---|
 | `3.1MB/s` | Average speed (first-second slow start excluded) |
 | `5.9MB/s` | Peak speed (fastest second within the 8s window) |
+| `512KB/s` / `<1KB/s` | Speeds below 1MB/s are shown in KB/s (v4.32.0) |
 | `Speed too low` | Cumulative download in the first 3 seconds below 64KB; judged too slow and terminated early |
 | `Download failed` | Total download in the 8s window below 256KB (connection failure or block page) |
 | `--` | No data (node never entered the speed test queue, or all download sources failed) |
-| Per-second speed bar chart | Bar height = in-row min-max normalization (every row has variation; the slowest slot still has a bar; height shows in-row shape only, not speed); color = absolute speed grading, 7 levels (SSRSpeedN origin): light green (very slow) → yellow → orange → red → purple → blue → dark blue (very fast), comparable across rows; nodes without per-second data show 8 short bars of equal height |
+| Per-second speed bar chart | Always 7 bars (any sampling length is resampled to 7 points); bar height = in-row min-max normalization (shape only), bar color = absolute speed (red = slow → green = fast, same ramp as the speed cells, comparable across rows), 1px white gaps between bars, no gray background; nodes without per-second data show 7 short bars of equal height |
 
 ### HTTP Status Codes (numbers in parentheses in the streaming column)
 
@@ -244,12 +259,12 @@ Subscription URL(s) (captures subscription-userinfo) → parse with multiple UA 
 | `Web Avg` | Web page simulation: average first-byte latency of 4 representative sites (CN exit uses domestic sites) |
 | `312ms(1lost)` | 312ms latency with 1 failed TCP handshake out of 3 (packet loss hint) |
 
-### Footer Statistics
+### Header & Footer
 
-- `Nodes: 26/33 reachable` — direct-connect successes + tunnel-probe successes / total nodes
-- `Average latency` — average latency of nodes with successful direct TCP
-- `UDP nodes: 4 (verified via HTTP)` — number of UDP-type nodes (their reachability is determined by tunnel probing)
-- `Test duration` — total time of the whole test round
+- Header line 1: `speed_test.py vX.Y.Z | mode name` (centered, bold); line 2: `Nodes: N | Duration: Xs` (left), `Sort: sort name` (right)
+- Footer line 1: latency terminology note (in quick mode: `Quick mode (parallel approximate speed test)`)
+- Footer line 2: `Nodes: 26/33 reachable | Avg latency: 234ms` (plus `UDP nodes: 4 (verified via HTTP)` when UDP nodes exist); `reachable` = direct-connect successes + tunnel-probe successes / total nodes; `Average latency` = average latency of nodes with successful direct TCP
+- Footer line 3: `Test time: YYYY-MM-DD HH:MM:SS (timezone) | Downloaded X this run` (left), `Powered by speed_test.py vX.Y.Z` (right)
 
 ## Sorting
 

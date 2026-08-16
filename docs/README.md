@@ -9,7 +9,7 @@
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Downloads](https://img.shields.io/github/downloads/oscyfmau/airport-speedtest/total?style=flat-square)](https://github.com/oscyfmau/airport-speedtest/releases)
 
-版本：v4.31.0 ｜ 仓库：[github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) ｜ [更新记录](CHANGELOG.md)
+版本：v4.32.0 ｜ 仓库：[github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) ｜ [更新记录](CHANGELOG.md)
 
 > 本项目由 AI 编写完成，因个人测速需求而开发，按需取用。
 
@@ -21,7 +21,7 @@
 
 ## 快速上手（三步，不会命令行也能用）
 
-1. **下载**：打开 [Releases 页面](https://github.com/oscyfmau/airport-speedtest/releases)，下载最新版的 `airport-speedtest-v4.31.0.zip`（精简包，含运行所需的全部文件）并解压，解压后先看里面的 `使用教程.txt`（会用 git 也可以 `git clone`）
+1. **下载**：打开 [Releases 页面](https://github.com/oscyfmau/airport-speedtest/releases)，下载最新版的 `airport-speedtest-v4.32.0.zip`（精简包，含运行所需的全部文件）并解压，解压后先看里面的 `使用教程.txt`（会用 git 也可以 `git clone`）
 2. **填订阅**：把解压目录里的 `代理.txt.example` 复制一份，改名为 `代理.txt`，用记事本打开，粘贴你的订阅链接后保存
    - 什么是订阅链接？机场服务商提供的网址（一般以 `https://` 开头，内含全部节点信息），在机场官网或客户端 App 的「复制订阅」处获得
 3. **运行**：
@@ -47,7 +47,7 @@ mihomo 内核无需手动下载，首次运行时自动下载到 `bin/`（约 47
 - 复用检测四档：完全复用 / 中转复用 / 落地复用，一眼看穿机场共用线路（借鉴 SSRSpeedN）
 - 网页模拟：并发加载 4 个代表性站点记首字节耗时，落地 CN 自动换国内站点（百度/哔哩哔哩/腾讯）
 - 补测机制：报告前自动补测超时节点，恢复的节点补跑测速
-- 输出：PNG 可视化报告（柱状图/风险配色/复用标注）+ JSON 结构化数据 + JSONL 结构化日志（订阅 token 自动遮蔽）
+- 输出：PNG 可视化报告（整格色块 + 每秒速度柱 + 白色网格线）+ JSON 结构化数据 + JSONL 结构化日志（订阅 token 自动遮蔽）
 - 控制台体验：订阅解析按 UA 逐次反馈、测速逐节点实时结果行、每阶段小结、结束时控制台 TOP5 排行（不开图也能看结果）；进度条阶段结束自动消失不残留
 - 菜单管理：节点稳定性视图（近 N 次出现率/可达率/波动）、节点筛选测速（按关键字/前 N 个）、历史结果管理（打开/删除）、订阅管理（遮蔽显示/添加/删除）、设置页（窗口秒数/并行数/自动开报告/稳定性窗口/大流量确认，跨会话保存）、环境信息页
 
@@ -65,7 +65,7 @@ mihomo 内核无需手动下载，首次运行时自动下载到 `bin/`（约 47
 
 两种方式任选：
 
-- 不用 git：到 [Releases 页面](https://github.com/oscyfmau/airport-speedtest/releases) 下载最新版 `airport-speedtest-v4.31.0.zip`（精简包，仅含运行核心文件）并解压；需要自行改代码时再下载 `Source code (zip)`
+- 不用 git：到 [Releases 页面](https://github.com/oscyfmau/airport-speedtest/releases) 下载最新版 `airport-speedtest-v4.32.0.zip`（精简包，仅含运行核心文件）并解压；需要自行改代码时再下载 `Source code (zip)`
 - 用 git：
 
 ```bash
@@ -169,6 +169,20 @@ python core/speed_test.py https://你的订阅链接 --full   # 完整报告
 
 ## 报告术语解释
 
+报告配色遵循直觉色（绿=快/好、红=慢/差），所有文字纯黑直绘、无描边，报告内不印图例；整格底色色块表达快慢好坏，数字只做精确读数。
+
+### 配色含义（v4.32.0）
+
+| 列 | 色块 |
+|---|---|
+| 延迟RTT / HTTP延迟 / 网页均耗 | 整格色块：≤50ms 绿 `#1E9650` → 500ms+ 深红 `#D2321E`（帧间线性插值）；`超时`/`--`/`UDP`/`代理可达` 为灰色块 |
+| 平均/最高速度 | 整格色块：慢=深红 `#B42823` → 快=深绿 `#287341`；全表最大速度 <8MB/s 时色板在 0~最大速度间线性铺满（低端也能拉开色差），否则对数映射（突刺不把慢节点挤成一片红）；无速度时显示失败原因（斑马底黑字） |
+| 流媒体 | 解锁/可用=深绿、失败/封锁/连接失败=深红、N/A=深青、未知=中灰、跳过(节点不可达)=灰蓝、未测=无底色 |
+| IP类型 | 家宽/移动=绿、商宽/机房=黄、代理/VPN/Tor=红 |
+| IP风险 | 低(<20)=绿、中(20-59)=黄、高(60+)=红 |
+| 复用 | 完全复用=红、中转复用=黄、落地复用=青 |
+| 每秒速度柱 | 柱色=绝对速度（与速度格同一色板）；柱高=行内起伏形状（不代表快慢） |
+
 ### 延迟与可达性列
 
 | 显示 | 含义 |
@@ -194,10 +208,11 @@ python core/speed_test.py https://你的订阅链接 --full   # 完整报告
 |---|---|
 | `3.1MB/s` | 平均速度（已剥离首秒慢启动） |
 | `5.9MB/s` | 峰值速度（8 秒窗口内最快的一秒） |
+| `512KB/s` / `<1KB/s` | 速度不足 1MB/s 时改用 KB/s 显示（v4.32.0） |
 | `速度过低` | 前 3 秒累计下载不足 64KB，判定为过慢提前终止 |
 | `下载失败` | 8 秒窗口内下载总量不足 256KB（连接失败或拦截页） |
 | `--` | 无数据（节点未进入测速队列或全部下载源失败） |
-| 每秒速度柱状图 | 柱高=行内 min-max 归一化（每行必有起伏，最慢槽也有柱，柱高管起伏形状、不代表快慢）；颜色=绝对速度 7 档（SSRSpeedN origin 同款）：浅绿(很慢)→黄→橙→红→紫→蓝→深蓝(很快)，跨行可比；无每秒数组节点显示 8 根等高矮柱 |
+| 每秒速度柱状图 | 恒 7 根柱（任意长度采样重采样为 7 点）；柱高=行内 min-max 归一化（只表起伏形状）、柱色=绝对速度（红=慢→绿=快，与速度格同色板、跨行可比）、柱间 1px 白缝、无灰色背景；无每秒数组节点显示 7 根等高矮柱 |
 
 ### HTTP 状态码（流媒体列括号内的数字）
 
@@ -244,12 +259,12 @@ python core/speed_test.py https://你的订阅链接 --full   # 完整报告
 | `网页均耗` | 网页模拟测速：4 个代表性站点首字节耗时的平均值（落地 CN 时换国内站点） |
 | `312ms(1丢)` | 延迟 312ms 且 3 次 TCP 握手中失败 1 次（丢包/抖动提示） |
 
-### 页脚统计
+### 页眉与页脚
 
-- `节点: 26/33 可达` — 直连成功 + 隧道探测成功之和 / 节点总数
-- `平均延迟` — 直连 TCP 成功节点的平均延迟
-- `UDP节点: 4 个(经HTTP实测)` — UDP 系节点数（其可达性由隧道探测判定）
-- `测试耗时` — 整轮测试用时
+- 页眉第 1 行：`speed_test.py vX.Y.Z | 模式名`（居中加粗）；第 2 行：`订阅: N 节点 | 测试耗时: Xs`（左）、`排序: 排序名`（右）
+- 页脚第 1 行：延迟术语说明（quick 模式为 `快速模式（并行近似测速）`）
+- 页脚第 2 行：`节点: 26/33 可达 | 平均延迟: 234ms`（有 UDP 节点时追加 `UDP节点: 4 个(经HTTP实测)`）；`可达` = 直连成功 + 隧道探测成功之和 / 节点总数；`平均延迟` = 直连 TCP 成功节点的平均延迟
+- 页脚第 3 行：`测试时间: YYYY-MM-DD HH:MM:SS (时区) | 本次实测下载 X`（左）、`Powered by speed_test.py vX.Y.Z`（右）
 
 ## 排序方式
 

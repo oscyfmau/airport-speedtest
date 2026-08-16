@@ -3,7 +3,7 @@
 """配置与常量（单一数据源；v4.10 起为真定义模块）"""
 import os
 
-VERSION = "4.31.0"  # SemVer：主版本.次版本.修订号
+VERSION = "4.32.0"  # SemVer：主版本.次版本.修订号
 
 
 # 产物累积清理默认值（v4.31.0，core/profiles.cleanup_outputs；settings 持久化可覆盖）
@@ -150,6 +150,55 @@ SPEED_COLORS = [
 ]
 
 
+# ---- PNG 报告版式色（v4.32.0，新视觉方案） ----
+REPORT_PAGE_BG     = (235, 235, 235)   # #EBEBEB 画布
+REPORT_HEADER_BG   = (228, 228, 228)   # #E4E4E4 表头行
+REPORT_FOOTER_BG   = (241, 241, 241)   # #F1F1F1 页脚
+REPORT_GRID        = (255, 255, 255)   # 内部网格线（横+竖）
+REPORT_OUTER       = (160, 160, 160)   # #A0A0A0 外框
+REPORT_BLACK       = (0, 0, 0)         # 所有文字（直绘不描边）
+REPORT_ZEBRA       = ((255, 255, 255), (244, 244, 244))   # 斑马两档
+REPORT_SPECIAL_BG  = (226, 226, 226)   # #E2E2E2 特殊态灰块（超时/--/UDP/代理可达）
+
+# ---- 延迟梯度（延迟RTT / HTTP延迟 / 网页均耗 共用，快=绿→慢=红，帧间线性插值）----
+LATENCY_RAMP = [(0, (30, 150, 80)), (50, (30, 150, 80)), (150, (150, 170, 40)),
+                (300, (190, 130, 35)), (500, (210, 50, 30))]
+# #1E9650 → #96AA28 → #BE8223 → #D2321E
+
+# ---- 速度色板（平均/最高/每秒速度段 共用，慢=红→快=绿）----
+SPEED_RAMP_R2G = [(0, (180, 40, 35)), (4, (180, 40, 35)), (8, (205, 65, 50)),
+                  (16, (215, 115, 50)), (24, (205, 160, 45)), (32, (140, 160, 50)),
+                  (40, (70, 140, 80)), (50, (40, 115, 65))]
+SPEED_NORM = [(0, (180, 40, 35)), (1 / 6, (205, 65, 50)), (2 / 6, (215, 115, 50)),
+              (3 / 6, (205, 160, 45)), (4 / 6, (140, 160, 50)), (5 / 6, (70, 140, 80)),
+              (1, (40, 115, 65))]      # 对数映射用归一化色序 p∈[0,1]
+SPEED_ADAPT_MAX = 8.0                 # 报表最大速度 < 8MB/s → 全表低速线性铺满
+
+# ---- 流媒体状态色 ----
+STREAMING_STATUS_COLORS = {
+    "ok": (60, 145, 70),         # 解锁/可用/本土解锁/解锁(未知) → 深绿 #3C9146
+    "pending": (205, 150, 15),   # 待解锁 → 深黄 #CD960F（预留，当前程序不产生）
+    "fail": (200, 60, 55),       # 失败/封锁/连接失败 → 深红 #C83C37
+    "na": (30, 140, 175),        # N/A → 深青 #1E8CAF
+    "unknown": (110, 115, 125),  # 未知 → 中灰 #6E737D
+    "skip": (145, 155, 170),     # 跳过(节点不可达) → 灰蓝 #919BAA（我方独有态）
+}
+# 未测（"--"/空）→ 斑马底 + 黑字，不填色
+
+# ---- IP 质量 / 复用 ----
+IP_TYPE_COLORS = {
+    "residential": (60, 145, 70),     # 家宽/移动 → 深绿 #3C9146
+    "datacenter": (190, 150, 30),     # 商宽/机房 → 深黄 #BE961E
+    "proxy": (200, 60, 55),           # 代理/VPN/Tor → 深红 #C83C37
+}
+# IP风险：低 → ok 绿；中 → pending 黄；高 → fail 红（复用 STREAMING_STATUS_COLORS 的 ok/pending/fail）
+REUSE_COLORS = {
+    "full": (200, 60, 55),            # 完全复用 → 深红（最重）
+    "relay": (205, 150, 15),          # 中转复用 → 深黄（中等）
+    "landing": (30, 140, 175),        # 落地复用 → 深青（最轻）
+}
+
+
 CORE_STREAMING_SERVICES = [
     {"id": "youtube",   "name": "YouTube",    "url": "https://www.youtube.com",         "type": "youtube"},
     {"id": "netflix",   "name": "Netflix",    "url": "https://www.netflix.com",         "type": "netflix"},
@@ -237,4 +286,4 @@ QUICK_STREAMING = [
 
 _STREAM_UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
-__all__ = ['VERSION', 'MIHOMO_REPO', '_SCRIPT_DIR', '_BASE_DIR', 'MIHOMO_DIR', 'OUTPUT_DIR', 'LOG_DIR', 'SUBSCRIBE_FILE', 'TCP_PING_CONCURRENCY', 'HTTP_LATENCY_TIMEOUT', 'HTTP_DOWNLOAD_TIMEOUT', 'STREAMING_TEST_TIMEOUT', 'IP_QUALITY_TIMEOUT', 'IP_RATE_LIMIT_PER_MIN', 'WPS_INTERNATIONAL_URLS', 'WPS_CN_URLS', 'DEFAULT_WORKERS', 'MAX_WORKERS', 'TCP_PROBE_CONCURRENCY', 'TCP_PROBE_TIMEOUT', 'SPEED_WINDOW_DEFAULT_SECONDS', 'SPEED_WINDOW_FAST_SECONDS', 'MIN_SPEED_BYTES', 'DOWNLOAD_CONNS', 'SLOW_ABORT_SECONDS', 'SLOW_ABORT_BYTES', 'SPEED_TEST_URLS', 'YOUTUBE_VIDEO_IDS', 'YOUTUBE_SOURCE_ENABLED', 'IP_CHECK_INTERVAL', 'UDP_TYPES', 'SPEED_COLORS', 'CORE_STREAMING_SERVICES', 'STANDARD_STREAMING_SERVICES', 'FULL_STREAMING_SERVICES', 'AI_STREAMING_SERVICES', 'SIMPLE_STREAMING_SERVICES', '_COMMON_IDS', 'COMMON_STREAMING_SERVICES', 'QUICK_DOWNLOAD_URL', 'QUICK_WINDOW', 'QUICK_WORKERS', 'QUICK_TCP_TIMEOUT', 'QUICK_STREAMING_IDS', 'QUICK_STREAMING', '_STREAM_UA', 'SILENT_RUNS', 'SILENT_DAYS', 'EVIDENCE_MAX', 'RUNS_MAX', 'STABILITY_APPEAR_RATIO', 'STABILITY_SIGMA', 'NEW_FACE_MIN_EVIDENCE', 'KEEP_REPORTS_DEFAULT', 'KEEP_LOGS_DAYS_DEFAULT']
+__all__ = ['VERSION', 'MIHOMO_REPO', '_SCRIPT_DIR', '_BASE_DIR', 'MIHOMO_DIR', 'OUTPUT_DIR', 'LOG_DIR', 'SUBSCRIBE_FILE', 'TCP_PING_CONCURRENCY', 'HTTP_LATENCY_TIMEOUT', 'HTTP_DOWNLOAD_TIMEOUT', 'STREAMING_TEST_TIMEOUT', 'IP_QUALITY_TIMEOUT', 'IP_RATE_LIMIT_PER_MIN', 'WPS_INTERNATIONAL_URLS', 'WPS_CN_URLS', 'DEFAULT_WORKERS', 'MAX_WORKERS', 'TCP_PROBE_CONCURRENCY', 'TCP_PROBE_TIMEOUT', 'SPEED_WINDOW_DEFAULT_SECONDS', 'SPEED_WINDOW_FAST_SECONDS', 'MIN_SPEED_BYTES', 'DOWNLOAD_CONNS', 'SLOW_ABORT_SECONDS', 'SLOW_ABORT_BYTES', 'SPEED_TEST_URLS', 'YOUTUBE_VIDEO_IDS', 'YOUTUBE_SOURCE_ENABLED', 'IP_CHECK_INTERVAL', 'UDP_TYPES', 'SPEED_COLORS', 'CORE_STREAMING_SERVICES', 'STANDARD_STREAMING_SERVICES', 'FULL_STREAMING_SERVICES', 'AI_STREAMING_SERVICES', 'SIMPLE_STREAMING_SERVICES', '_COMMON_IDS', 'COMMON_STREAMING_SERVICES', 'QUICK_DOWNLOAD_URL', 'QUICK_WINDOW', 'QUICK_WORKERS', 'QUICK_TCP_TIMEOUT', 'QUICK_STREAMING_IDS', 'QUICK_STREAMING', '_STREAM_UA', 'SILENT_RUNS', 'SILENT_DAYS', 'EVIDENCE_MAX', 'RUNS_MAX', 'STABILITY_APPEAR_RATIO', 'STABILITY_SIGMA', 'NEW_FACE_MIN_EVIDENCE', 'KEEP_REPORTS_DEFAULT', 'KEEP_LOGS_DAYS_DEFAULT', 'REPORT_PAGE_BG', 'REPORT_HEADER_BG', 'REPORT_FOOTER_BG', 'REPORT_GRID', 'REPORT_OUTER', 'REPORT_BLACK', 'REPORT_ZEBRA', 'REPORT_SPECIAL_BG', 'LATENCY_RAMP', 'SPEED_RAMP_R2G', 'SPEED_NORM', 'SPEED_ADAPT_MAX', 'STREAMING_STATUS_COLORS', 'IP_TYPE_COLORS', 'REUSE_COLORS']
