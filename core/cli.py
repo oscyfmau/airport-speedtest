@@ -40,7 +40,7 @@ def _open_report(path: str) -> bool:
             subprocess.Popen(["xdg-open", path])
         return True
     except Exception as e:
-        logger.error(f"打开报告失败: {path} ({e})")
+        logger.error("打开报告失败: %s (%s)", path, e)
         return False
 
 
@@ -572,7 +572,7 @@ def _menu_update_kernel() -> None:
             if os.path.exists(bak):
                 shutil.rmtree(bak, ignore_errors=True)  # 成功后清理备份
             new_ver = MihomoEngine._get_mihomo_version(dst)
-            logger.info(f"mihomo 更新完成: {dst}",
+            logger.info("mihomo 更新完成: %s", dst,
                         extra=_ev("mihomo_update", {"ok": True, "path": dst,
                                                     "version": new_ver}))
             print(f"[OK] 更新完成: {dst}" + (f" ({new_ver})" if new_ver else ""))
@@ -582,7 +582,7 @@ def _menu_update_kernel() -> None:
             print("[错误] 更新失败")
         shutil.rmtree(tmp_dir, ignore_errors=True)
     except Exception as e:
-        logger.error(f"mihomo 更新失败: {_safe_exc_str(e)}",
+        logger.error("mihomo 更新失败: %s", _safe_exc_str(e),
                      extra=_ev("mihomo_update", {"ok": False, "error": _safe_exc_str(e)[:200]}))
         print(f"[错误] 更新失败: {_safe_exc_str(e)}")
     input("\n按 Enter 返回菜单...")
@@ -808,7 +808,10 @@ async def async_main():
                 mode = "quick"  # v4.30.0：并行近似测速 + 4 核心流媒体
             elif arg.startswith("--workers="):
                 try:
-                    workers = max(1, min(int(arg.split("=", 1)[1]), MAX_WORKERS))
+                    v = int(arg.split("=", 1)[1])
+                    if not (1 <= v <= MAX_WORKERS):
+                        logger.warning("--workers=%d 超出范围 1-%d，已钳制", v, MAX_WORKERS)
+                    workers = max(1, min(v, MAX_WORKERS))
                 except ValueError:
                     logger.warning("--workers 参数无效: %s，使用默认值 %d", arg, DEFAULT_WORKERS)
             elif arg == "--workers":
@@ -816,7 +819,10 @@ async def async_main():
                     logger.warning("--workers 缺少参数，使用默认值 %d", DEFAULT_WORKERS)
                 else:
                     try:
-                        workers = max(1, min(int(args[i + 1]), MAX_WORKERS))
+                        v = int(args[i + 1])
+                        if not (1 <= v <= MAX_WORKERS):
+                            logger.warning("--workers=%d 超出范围 1-%d，已钳制", v, MAX_WORKERS)
+                        workers = max(1, min(v, MAX_WORKERS))
                         skip_next = i + 1
                     except ValueError:
                         # v4.27.0：后跟非数字（如 --workers --full）时不吞掉该 flag
@@ -841,7 +847,7 @@ async def async_main():
                     if pngs:
                         latest = max(pngs, key=lambda f: os.path.getmtime(os.path.join(OUTPUT_DIR, f)))
                         latest_path = os.path.join(OUTPUT_DIR, latest)
-                        logger.info(f"打开最新报告: {latest_path}")
+                        logger.info("打开最新报告: %s", latest_path)
                         _open_report(latest_path)
                     else:
                         logger.error("output 目录中没有 PNG 报告")
@@ -852,7 +858,14 @@ async def async_main():
                 show_menu_mode = True
                 break
             elif arg.startswith("http://") or arg.startswith("https://"):
-                url = arg
+                # v4.39.0：多个位置 URL 合并解析（旧实现后一个静默覆盖前一个）
+                if url is None:
+                    url = arg
+                elif isinstance(url, str):
+                    logger.warning("检测到多个订阅 URL，合并解析")
+                    url = [url, arg]
+                else:
+                    url.append(arg)
             elif arg == "-i":
                 if i + 1 >= len(args):
                     logger.warning("-i 缺少文件参数")

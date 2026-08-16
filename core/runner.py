@@ -67,9 +67,9 @@ def _finish_partial(results_dict: dict, mode: str, display_mode: str,
     except Exception:
         pass
     if img_path:
-        logger.info(f"报告已生成: {img_path}")
+        logger.info("报告已生成: %s", img_path)
     if json_path:
-        logger.info(f"数据已生成: {json_path}")
+        logger.info("数据已生成: %s", json_path)
     try:
         print_console_summary(list(results_dict.values()), sort_by)
     except Exception:
@@ -102,7 +102,7 @@ async def _run_node_pipeline(pool: MihomoWorkerPool, node_tasks: list,
                 return
             node, do_stream, do_ip, do_web = item
             try:
-                pbar.set_postfix_str(f"{_flag_to_text(node.name)} 加载中")
+                pbar.set_postfix_str(f"{_trunc_width(_flag_to_text(node.name), 20)} 加载中")
                 if not await worker.load_node(node):
                     if node.name in results_dict:
                         results_dict[node.name].error = "节点加载失败"
@@ -121,7 +121,7 @@ async def _run_node_pipeline(pool: MihomoWorkerPool, node_tasks: list,
                         unlocked = sum(1 for v in streaming.values()
                                        if "解锁" in v or "可用" in v or "成功" in v)
                         _log_streaming_details(node.name, streaming)
-                        pbar.set_postfix_str(f"{_flag_to_text(node.name)} 解锁{unlocked}/{len(streaming)}")
+                        pbar.set_postfix_str(f"{_trunc_width(_flag_to_text(node.name), 20)} 解锁{unlocked}/{len(streaming)}")
 
                 # 2) IP 质量（多源回退 + 全局节流）
                 if do_ip:
@@ -146,7 +146,7 @@ async def _run_node_pipeline(pool: MihomoWorkerPool, node_tasks: list,
                     risk = ip_info.get("risk_score")
                     risk = "?" if risk is None else risk
                     _log_ip_details(node.name, ip_info)
-                    pbar.set_postfix_str(f"{_flag_to_text(node.name)} 风险:{risk}%")
+                    pbar.set_postfix_str(f"{_trunc_width(_flag_to_text(node.name), 20)} 风险:{risk}%")
 
                 # 3) 网页模拟测速（依赖 IP 归属选站点；无 IP 数据时用国际站点）
                 if do_web:
@@ -160,7 +160,7 @@ async def _run_node_pipeline(pool: MihomoWorkerPool, node_tasks: list,
                         if node.name in results_dict:
                             results_dict[node.name].webpage = web
                         pbar.set_postfix_str(
-                            f"{_flag_to_text(node.name)} 网页{web.get('avg_ms', '?')}ms")
+                            f"{_trunc_width(_flag_to_text(node.name), 20)} 网页{web.get('avg_ms', '?')}ms")
             except Exception as e:
                 if node.name in results_dict:
                     results_dict[node.name].error = _safe_exc_str(e)
@@ -225,7 +225,7 @@ async def _run_quick_pipeline(pool: MihomoWorkerPool, nodes: list[ProxyNode],
                 queue.task_done()
                 return
             try:
-                pbar.set_postfix_str(f"{_flag_to_text(node.name)} 检测中")
+                pbar.set_postfix_str(f"{_trunc_width(_flag_to_text(node.name), 20)} 检测中")
                 if not await worker.load_node(node):
                     if node.name in results_dict and not results_dict[node.name].error:
                         results_dict[node.name].error = "节点加载失败"
@@ -237,7 +237,7 @@ async def _run_quick_pipeline(pool: MihomoWorkerPool, nodes: list[ProxyNode],
                     await _quick_one_node(sess, proxy, node, results_dict)
                     unlocked = sum(1 for v in results_dict[node.name].streaming.values()
                                    if isinstance(v, str) and ("解锁" in v or "可用" in v))
-                    pbar.set_postfix_str(f"{_flag_to_text(node.name)} 解锁{unlocked}/4")
+                    pbar.set_postfix_str(f"{_trunc_width(_flag_to_text(node.name), 20)} 解锁{unlocked}/4")
             except Exception as e:
                 if node.name in results_dict and not results_dict[node.name].error:
                     results_dict[node.name].error = _safe_exc_str(e)
@@ -259,7 +259,7 @@ async def _run_quick_serial(mihomo: MihomoEngine, nodes: list[ProxyNode],
     pbar = tqdm(total=len(nodes), desc="快速检测", unit="节点", mininterval=1.0, leave=False)
     try:
         for node in nodes:
-            display = _flag_to_text(node.name)
+            display = _trunc_width(_flag_to_text(node.name), 20)
             pbar.set_postfix_str(f"{display} 检测中...")
             ok = await mihomo.switch_proxy(node.name)
             if not ok:
@@ -404,9 +404,9 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
     )
     for n in nodes[:5]:
         addr = f"{n.type}://{n.server}:{n.port}"
-        logger.info(f"   - {_pad_right(n.name, 32)} {addr:>38}")
+        logger.info("   - %s %s", _pad_right(n.name, 32), addr.rjust(38))
     if len(nodes) > 5:
-        logger.info(f"   ... 还有 {len(nodes) - 5} 个节点")
+        logger.info("   ... 还有 %d 个节点", len(nodes) - 5)
 
     # 初始化结果
     results_dict: dict[str, TestResult] = {}
@@ -459,7 +459,8 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
             # v4.30.0 快速检测：TCP 1 次重试筛活 → 死节点如实标注 → 并行一条龙 → 回退串行
             phase = "快速检测"
             logger.info("=" * 50)
-            logger.info(f"[{step_idx}/{len(steps)}] 快速检测（并行 {QUICK_WORKERS} 路近似测速 + 4 核心流媒体）")
+            logger.info("[%d/%d] 快速检测（并行 %d 路近似测速 + 4 核心流媒体）",
+                        step_idx, len(steps), QUICK_WORKERS)
             logger.info("=" * 50)
             tcp_results = await run_tcp_ping(nodes, attempts=1, timeouts=(QUICK_TCP_TIMEOUT,))
             for n in nodes:
@@ -514,7 +515,7 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
         if mode not in ("streaming", "quick"):
             phase = "TCP检测"
             logger.info("=" * 50)
-            logger.info(f"[{step_idx}/{len(steps)}] TCP Ping 延迟测试")
+            logger.info("[%d/%d] TCP Ping 延迟测试", step_idx, len(steps))
             logger.info("=" * 50)
             tcp_results = await run_tcp_ping(nodes)
             for n in nodes:
@@ -531,20 +532,21 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
             candidates = [n for n in nodes if (tcp_results.get(n.name) or (None, 0))[0] is None]
             if candidates and mihomo.binary_path and os.path.isfile(mihomo.binary_path):
                 n_conc = min(TCP_PROBE_CONCURRENCY, len(candidates))
-                logger.info(f"TCP 直连未通 {len(candidates)} 个，启动 mihomo 隧道探测（并发 {n_conc} 路）...")
+                logger.info("TCP 直连未通 %d 个，启动 mihomo 隧道探测（并发 %d 路）...",
+                            len(candidates), n_conc)
                 probe_results = await run_tcp_probe_pool(mihomo.binary_path, candidates)
                 for name, ok in probe_results.items():
                     if name in results_dict:
                         results_dict[name].tcp_probe = ok
                 if probe_results:
                     probe_ok = sum(1 for v in probe_results.values() if v)
-                    logger.info(f"隧道探测: {probe_ok}/{len(candidates)} 节点可达")
+                    logger.info("隧道探测: %d/%d 节点可达", probe_ok, len(candidates))
                 else:
                     logger.warning("隧道探测不可用（探测池启动失败），按直连结果继续")
 
             udp_n = sum(1 for n in nodes if is_udp_node(n))
             extra = f"（UDP节点 {udp_n} 个经隧道探测）" if udp_n else ""
-            logger.info(f"TCP 检测完成: 直连 {success_tcp}/{len(nodes)} 可达{extra}")
+            logger.info("TCP 检测完成: 直连 %d/%d 可达%s", success_tcp, len(nodes), extra)
             step_idx += 1
 
         # 可达性合并：直连成功 或 隧道探测成功（探测池不可用时 UDP 节点按直连语义保留）
@@ -603,7 +605,8 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
                         "油管测速源不可用，使用 %d 个基础源", len(SPEED_TEST_URLS),
                         extra=_ev("yt_source_resolve", {"method": yt_method, "host": None}))
             logger.info("=" * 50)
-            logger.info(f"[{step_idx}/{len(steps)}] HTTP 测速（串行，{DOWNLOAD_CONNS} 连接/节点）")
+            logger.info("[%d/%d] HTTP 测速（串行，%d 连接/节点）",
+                        step_idx, len(steps), DOWNLOAD_CONNS)
             logger.info("=" * 50)
             await run_speed_test(mihomo, active_speed, results_dict)
             # 阶段小结：成功/最快/平均
@@ -631,7 +634,7 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
                              and results_dict[n.name].tcp_probe is not True]
             if timeout_nodes:
                 logger.info("=" * 50)
-                logger.info(f"补测超时节点: {len(timeout_nodes)} 个（直连重试 + 隧道重试）")
+                logger.info("补测超时节点: %d 个（直连重试 + 隧道重试）", len(timeout_nodes))
                 logger.info("=" * 50)
                 revived = set()
                 # 直连重试（UDP 节点由 run_tcp_ping 自动跳过，交给隧道重试）
@@ -719,7 +722,8 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
                         f"mihomo 并行池就绪: {len(pool.workers)} workers（流媒体/IP/网页）",
                         extra=_ev("worker_pool_start", {"workers": len(pool.workers)}))
                     logger.info("=" * 50)
-                    logger.info(f"[{step_idx}/{len(steps)}] 流媒体/IP/网页检测（并行 {len(pool.workers)} 路）")
+                    logger.info("[%d/%d] 流媒体/IP/网页检测（并行 %d 路）",
+                                step_idx, len(steps), len(pool.workers))
                     logger.info("=" * 50)
                     await _run_node_pipeline(pool, node_tasks, results_dict, streaming_services)
                 else:
@@ -731,7 +735,7 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
                     mihomo.generate_config(active_all)
                     await mihomo.start()
                 logger.info("=" * 50)
-                logger.info(f"[{step_idx}/{len(steps)}] 流媒体/IP/网页检测（串行）")
+                logger.info("[%d/%d] 流媒体/IP/网页检测（串行）", step_idx, len(steps))
                 logger.info("=" * 50)
                 test_nodes = [n for n in active_all if n.name not in dead_names]  # v4.28.0：死节点跳过
                 if need_stream:
@@ -825,7 +829,7 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
         if any("解锁" in v or "可用" in v for v in r.streaming.values())
     ) if any(r.streaming for r in results_dict.values()) else -1
     if unlocked >= 0:
-        logger.info(f"{_pad_right('流媒体解锁节点', 14)}: {unlocked}/{len(nodes)}")
+        logger.info("%s: %d/%d", _pad_right("流媒体解锁节点", 14), unlocked, len(nodes))
     # 同时导出 JSON
     try:
         json_path = export_results_json(list(results_dict.values()), mode,
@@ -848,11 +852,13 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
     except Exception:
         pass
 
-    logger.info(f"{_pad_right('报告', 14)}: {img_path}", extra=_ev("report_done", {"path": img_path}))
+    logger.info("%s: %s", _pad_right("报告", 14), img_path,
+                extra=_ev("report_done", {"path": img_path}))
     if json_path:
-        logger.info(f"{_pad_right('数据', 14)}: {json_path}", extra=_ev("json_export_done", {"path": json_path}))
+        logger.info("%s: %s", _pad_right("数据", 14), json_path,
+                    extra=_ev("json_export_done", {"path": json_path}))
     if _LOG_FILE:
-        logger.info(f"{_pad_right('日志', 14)}: {_LOG_FILE}")
+        logger.info("%s: %s", _pad_right("日志", 14), _LOG_FILE)
     logger.info("=" * 50)
     try:
         print_console_summary(list(results_dict.values()), sort_by)

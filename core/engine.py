@@ -117,7 +117,7 @@ async def run_tcp_ping(nodes: list[ProxyNode], concurrency: int = TCP_PING_CONCU
                 label += f"({attempts - ok}丢)"
         else:
             label = "超时"
-        pbar.set_postfix_str(f"{_flag_to_text(node.name)} {label}", refresh=False)
+        pbar.set_postfix_str(f"{_trunc_width(_flag_to_text(node.name), 20)} {label}", refresh=False)
         pbar.update(1)
         logger.debug(
             "TCP %s %s", node.name, label,
@@ -157,7 +157,7 @@ async def run_tcp_probe_pool(binary_path: str, candidates: list[ProxyNode]) -> d
                 return
             ok = False
             try:
-                pbar.set_postfix_str(f"{_flag_to_text(node.name)} 探测中")
+                pbar.set_postfix_str(f"{_trunc_width(_flag_to_text(node.name), 20)} 探测中")
                 if await worker.load_node(node):
                     try:
                         async with aiohttp.ClientSession(
@@ -177,7 +177,7 @@ async def run_tcp_probe_pool(binary_path: str, candidates: list[ProxyNode]) -> d
                 "隧道探测 %s %s", node.name, "可达" if ok else "不可达",
                 extra=_ev("tcp_probe", {"node": node.name, "reachable": ok}))
             pbar.set_postfix_str(
-                f"{_flag_to_text(node.name)} {'可达' if ok else '不可达'}", refresh=False)
+                f"{_trunc_width(_flag_to_text(node.name), 20)} {'可达' if ok else '不可达'}", refresh=False)
             queue.task_done()
             pbar.update(1)
 
@@ -297,7 +297,7 @@ class MihomoEngine:
             elif machine in ("arm64", "aarch64"):
                 arch = "arm64"
             else:
-                logger.warning(f"不支持的 CPU 架构: {machine}，跳过 mihomo 下载")
+                logger.warning("不支持的 CPU 架构: %s，跳过 mihomo 下载", machine)
                 return ""
             if system == "win32":
                 plat = f"windows-{arch}"
@@ -359,12 +359,12 @@ class MihomoEngine:
                         except Exception:
                             os.remove(zip_path)  # 中途异常：清理半截压缩包
                             raise
-                        logger.info(f"下载完成: {fname} ({_fmt_size(total)}，mihomo {tag})")
+                        logger.info("下载完成: %s (%s，mihomo %s)", fname, _fmt_size(total), tag)
                         break
                     else:
                         zip_resp.close()  # 非 200（404/403）：关闭连接再试下一个候选
                 except Exception as e:
-                    logger.warning(f"下载 {fname} 失败: {_safe_exc_str(e)}")
+                    logger.warning("下载 %s 失败: %s", fname, _safe_exc_str(e))
                     continue
 
             if not zip_path or not os.path.exists(zip_path):
@@ -406,7 +406,7 @@ class MihomoEngine:
                                 raise RuntimeError(f"非法压缩包路径: {name}")
                         zf.extractall(target_dir)
                 except Exception as e:
-                    logger.error(f"解压失败: {e}")
+                    logger.error("解压失败: %s", e)
                     os.remove(zip_path)
                     return ""
                 os.remove(zip_path)
@@ -419,7 +419,7 @@ class MihomoEngine:
                             dst = os.path.join(target_dir, f"mihomo{ext}")
                             if binary_path != dst:
                                 shutil.move(binary_path, dst)
-                            logger.info(f"mihomo {tag} 已就绪: {dst}")
+                            logger.info("mihomo %s 已就绪: %s", tag, dst)
                             return dst
                 return ""
             else:
@@ -432,14 +432,14 @@ class MihomoEngine:
                         f.write(data)
                     os.chmod(dst, 0o755)
                 except Exception as e:
-                    logger.error(f"解压失败: {e}")
+                    logger.error("解压失败: %s", e)
                     os.remove(zip_path)
                     return ""
                 os.remove(zip_path)
-                logger.info(f"mihomo 已就绪: {dst}")
+                logger.info("mihomo 已就绪: %s", dst)
                 return dst
         except Exception as e:
-            logger.error(f"mihomo 下载失败: {e}")
+            logger.error("mihomo 下载失败: %s", e)
             return ""
 
     def generate_config(self, nodes: list[ProxyNode]) -> str:
@@ -780,7 +780,7 @@ class MihomoWorkerPool:
                 if not await w.start():
                     raise RuntimeError("worker 启动超时")
         except Exception as e:
-            logger.error(f"并行池启动失败: {e}")
+            logger.error("并行池启动失败: %s", e)
             await self.stop()
             return False
         return bool(self.workers)

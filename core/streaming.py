@@ -708,12 +708,12 @@ async def run_streaming_test(mihomo: MihomoEngine, nodes: list[ProxyNode],
     try:
         for node in nodes:
             display = _flag_to_text(node.name)
-            pbar.set_postfix_str(f"{display} 检测中...")
+            pbar.set_postfix_str(f"{_trunc_width(display, 20)} 检测中...")
             ok = await mihomo.switch_proxy(node.name)
             if not ok:
                 if node.name in results and not results[node.name].error:
                     results[node.name].error = "切换失败"  # v4.28.0：如实记录
-                pbar.set_postfix_str(f"{display} 切换失败", refresh=False)
+                pbar.set_postfix_str(f"{_trunc_width(display, 20)} 切换失败", refresh=False)
                 pbar.update(1)
                 continue
             await asyncio.sleep(0.3)
@@ -729,7 +729,7 @@ async def run_streaming_test(mihomo: MihomoEngine, nodes: list[ProxyNode],
                 unlocked = sum(1 for v in streaming.values()
                               if "解锁" in v or "可用" in v or "成功" in v)
                 _log_streaming_details(node.name, streaming)
-                pbar.set_postfix_str(f"{display} {unlocked}/{len(streaming)}", refresh=False)
+                pbar.set_postfix_str(f"{_trunc_width(display, 20)} {unlocked}/{len(streaming)}", refresh=False)
                 pbar.update(1)
     finally:
         stop.set()

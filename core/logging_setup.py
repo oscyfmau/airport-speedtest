@@ -6,6 +6,7 @@ import logging
 import os
 import sys
 import tempfile
+import threading
 import time
 import traceback
 from datetime import datetime
@@ -116,6 +117,7 @@ class JsonlFileHandler(logging.Handler):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         self.path = path
         self._fh = open(path, "a", encoding="utf-8")
+        self._lock = threading.Lock()  # v4.39.0：串行化写入（当前单线程模型无实际并发，防御性）
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
@@ -132,8 +134,9 @@ class JsonlFileHandler(logging.Handler):
                 entry["exc"] = _safe_exc_str(
                     "".join(traceback.format_exception(*record.exc_info)).strip())
             line = json.dumps(entry, ensure_ascii=False, default=str) + "\n"
-            self._fh.write(_sanitize_surrogates(line))
-            self._fh.flush()
+            with self._lock:  # v4.39.0：写+flush 原子化
+                self._fh.write(_sanitize_surrogates(line))
+                self._fh.flush()
         except Exception as e:
             # 写日志失败不能拖垮主流程；首次失败向 stderr 提示一次，避免静默丢失
             if not getattr(self, "_warned", False):
@@ -166,7 +169,9 @@ def _pkg_version(name: str) -> str:
 
 
 def _cleanup_empty_log() -> None:
-    """进程退出时：当前日志文件为空（未跑测试，如 --help/--report/菜单退出）则删除"""
+    """进程退出时：仅删除零字节的空日志文件（v4.39.0 修正 docstring——只删空文件；
+    --help/--report 等未产生任何记录的场景；菜单退出会写 menu_choice 行，文件非空保留，
+    与"日志全部保留"策略一致）"""
     global _LOG_HANDLER, _LOG_FILE
     if _LOG_HANDLER is not None:
         try:

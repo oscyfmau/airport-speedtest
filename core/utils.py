@@ -98,13 +98,25 @@ _URL_IN_TEXT_RE = re.compile(r"https?://[^\s\"'<>)\]]+")
 
 _URL_REL_RE = re.compile(r"(url[:=]\s*)(\S+)")
 
+# v4.39.0：任意 scheme 的节点 URI（ss://vmess://trojan:// 等）——这些 URI 内嵌凭据，
+# 且 _mask_url 的 query/path 遮蔽规则不适用，异常文本中出现时整段遮蔽
+_URL_ANY_SCHEME_RE = re.compile(r"\b[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s\"'<>)\]]+")
+
 
 def _safe_exc_str(e: BaseException) -> str:
     """异常文本内的 URL 统一过 _mask_url（requests/aiohttp 异常常携带完整 URL
-    或 "url: /path?token=..." 相对形式，防止 token 经异常消息泄漏）"""
+    或 "url: /path?token=..." 相对形式，防止 token 经异常消息泄漏；
+    v4.39.0：ss:// 等非 http(s) 节点 URI 整段遮蔽为 `scheme://***`）"""
     try:
         s = str(e)
-        s = _URL_IN_TEXT_RE.sub(lambda m: _mask_url(m.group(0)), s)
+
+        def _mask_any(m):
+            u = m.group(0)
+            if u.startswith(("http://", "https://")):
+                return _mask_url(u)
+            return u.split(":", 1)[0] + "://***"
+
+        s = _URL_ANY_SCHEME_RE.sub(_mask_any, s)
         s = _URL_REL_RE.sub(lambda m: m.group(1) + _mask_url(m.group(2)), s)
         return s
     except Exception:
@@ -260,4 +272,4 @@ def _system_proxy_info() -> str:
     except Exception:
         return ""
 
-__all__ = ['HAS_CLOUDSCRAPER', 'HAS_YTDLP', 'DIRECT_PROXIES', '_SENSITIVE_PARAMS', '_mask_url', '_URL_IN_TEXT_RE', '_URL_REL_RE', '_safe_exc_str', '_FLAG_PAIR_RE', '_flag_to_text', '_verified_ssl', '_no_verify_ssl', '_remove_prefix', 'b64decode_pad', '_str_width', '_pad_right', '_trunc_width', '_fmt_size', '_sanitize_surrogates', '_pbar_ticker', '_system_proxy_info']
+__all__ = ['HAS_CLOUDSCRAPER', 'HAS_YTDLP', 'DIRECT_PROXIES', '_SENSITIVE_PARAMS', '_mask_url', '_URL_IN_TEXT_RE', '_URL_REL_RE', '_URL_ANY_SCHEME_RE', '_safe_exc_str', '_FLAG_PAIR_RE', '_flag_to_text', '_verified_ssl', '_no_verify_ssl', '_remove_prefix', 'b64decode_pad', '_str_width', '_pad_right', '_trunc_width', '_fmt_size', '_sanitize_surrogates', '_pbar_ticker', '_system_proxy_info']

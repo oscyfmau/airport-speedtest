@@ -8,6 +8,37 @@
 
 ---
 
+## v4.39.0
+
+### 新增
+- （无）
+
+### 修改
+- 全部 30 处 `logger.*(f"...")` 预格式化改惰性 `%s` 传参（engine/runner/cli）
+- `_safe_exc_str` 覆盖非 http(s) 节点 URI：新增 `_URL_ANY_SCHEME_RE`，ss://vmess://trojan:// 等整段遮蔽为 `scheme://***`（旧实现仅遮 http(s) 与 `url:` 相对形式）
+- `JsonlFileHandler.emit` 写+flush 加 `threading.Lock`（防御性；当前单线程模型无实际并发）
+- 全部 tqdm postfix 节点名统一 `_trunc_width(..., 20)` 截断（engine/runner/streaming/ip_quality/webpage/tester）
+- `_cleanup_empty_log` docstring 修正：只删零字节空日志（--help/--report 等；菜单退出有 menu_choice 行非空保留）
+- `--workers` 越界（<1 或 >8）钳制时输出 WARNING（此前静默钳制）
+- 多个位置订阅 URL 合并解析并 WARNING（旧实现后一个静默覆盖前一个）
+- README×2：`HTTP延迟 --` 文档改「超时」与报告一致；已知限制补 shadowtls/naive/juicity 过滤说明与 `-h` 依赖说明
+- CLAUDE.md 解析器行修正：ssr remarks 优先、group 兜底作节点名（代码早已如此，文档滞后）
+
+### 修复
+- 异常文本中的 ss:// 等节点 URI 内嵌凭据可经日志泄漏（整段遮蔽）
+- tqdm postfix 超长节点名撑破进度条
+- `--workers=0/99` 静默钳制无提示
+- 命令行多个订阅 URL 时后一个静默丢弃
+
+### 移除
+- （无）
+
+### 复核确认（无需改动）
+- `_YOUTUBE_DL_URL` 已随 `state.reset_run_state()` 每次运行重置（菜单连续运行不串味）
+- UX-17：非 tty 重定向输出已 `sys.stdout/stderr.reconfigure(encoding="utf-8")`
+- UX-22：`--full` 报告页眉显示名"完整测速"正确
+- UX-16：IP 风险色块阈值（低<20/中<60/高）与 README 文本一致
+
 ## v4.38.0
 
 ### 新增
