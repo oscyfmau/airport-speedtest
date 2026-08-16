@@ -83,9 +83,13 @@ def resolve_youtube_download_url(timeout: int = 15, proxy: str = None) -> str:
     else:
         opts["proxy"] = ""  # v4.28.0：空串=强制直连，不读环境/系统代理
     t_start = time.monotonic()
+    deadline = t_start + 30  # v4.37.0：绝对 30s 上限（此前为"进入下一视频前检查"的软上限）
     for vid in YOUTUBE_VIDEO_IDS:
-        if time.monotonic() - t_start > 30:
+        if time.monotonic() > deadline:
             break
+        # 按剩余时间动态收窄 socket 超时，保证单次 extract_info 不拖破 30s 硬上限
+        opts = dict(opts)
+        opts["socket_timeout"] = max(2.0, min(timeout, deadline - time.monotonic()))
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(vid, download=False)
@@ -231,7 +235,11 @@ def parse_ss(uri: str) -> Optional[ProxyNode]:
     """解析 ss:// SIP002 格式"""
     try:
         parsed = urlparse(uri)
-        raw = parsed.netloc or parsed.path
+        raw = parsed.netloc
+        if "@" not in raw:
+            # 纯 base64 载荷可能含 "/"（base64 字符集含 /），urlparse 会把它切进 path
+            # —— v4.37.0：netloc 无 @ 时拼接 path 取完整载荷，修复旧实现截断解析失败
+            raw = raw + parsed.path
         name = unquote(parsed.fragment) if parsed.fragment else ""
         # 尝试 SIP002 标准: ss://base64(method:password)@host:port
         if "@" in raw:
@@ -424,6 +432,11 @@ def parse_wireguard(uri: str) -> Optional[ProxyNode]:
             extra["private-key"] = unquote(parsed.password)
         name = unquote(parsed.fragment) if parsed.fragment else parsed.hostname or ""
         params = parse_qs(parsed.query)
+        # v4.37.0：部分机场 wireguard 链接用查询参数携带 private-key（标准 wg:// 基本不带）
+        if not extra.get("private-key"):
+            pk = params.get("privateKey") or params.get("private-key")
+            if pk:
+                extra["private-key"] = unquote(pk[0])
         if params.get("address"):
             extra["ip"] = params["address"][0]
         if params.get("dns"):
@@ -848,7 +861,9 @@ def _is_valid_node(n: ProxyNode) -> bool:
         if kw in n.name:
             return False
     # 与 mihomo 内置名称冲突（proxy 与 proxy-group 共用命名空间，重名会整份加载失败）
-    if n.name in ("DIRECT", "Auto"):
+    # v4.37.0：先按 _sanitize_name 口径清洗再比较——"Auto\n"/"DIRECT\x00" 等带控制符
+    # 变体此前可绕过本检查，清洗后与内置名冲突导致整份配置加载失败
+    if _sanitize_name(n.name) in ("DIRECT", "Auto"):
         logger.warning("节点 %s 与 mihomo 内置名称冲突，已过滤", n.name)
         return False
     # mihomo 不支持的类型（shadowtls/naive/juicity 等）不进测速流程

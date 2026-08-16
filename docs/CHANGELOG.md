@@ -8,6 +8,31 @@
 
 ---
 
+## v4.37.0
+
+### 新增
+- （无）
+
+### 修改
+- `check_max`：补页面文案区域拦截（`not available in your region` 等 4 类，与 check_disney 对齐）；200 但无 `countryCode` 时返回 `可用` 而非裸 `解锁`
+- `check_tiktok`/`check_spotify`/`check_steam`/`check_primevideo`：地区码结果从 `解锁(XX)` 改 `可用(XX)`（页面 200 带地区码只证明服务可达+识别到地区，非版权内容解锁证明）
+- `check_generic` 403 大页面兜底收紧：需同时不含挑战关键字（cf-challenge/just a moment/challenge-platform/cf-turnstile/attention required）
+- `parse_ss`：纯 base64 载荷在 netloc 无 `@` 时拼接 `netloc + path` 取完整载荷（防 base64 含 `/` 被 urlparse 截断；纯 ASCII base64 不含 `/`，仅非 ASCII 载荷触发）
+- `resolve_youtube_download_url`：总耗时 30s 改绝对 deadline（`t_start + 30`），按剩余时间动态收窄 `socket_timeout`（下限 2s）
+- `parse_wireguard`：支持 `?privateKey=`/`?private-key=` 查询参数补 private-key（部分机场链接格式）
+- `_is_valid_node`：mihomo 保留字（DIRECT/Auto）检查改按 `_sanitize_name` 清洗后比较（"Auto\n"/"DIRECT\x00" 等带控制符变体此前可绕过，清洗后与内置名冲突导致配置加载失败）
+- `webpage.check_one_node_webpage`：落地 CN 判定改 `country.upper() == "CN"`（小写 "cn" 此前误走国际站点）
+
+### 修复
+- Max 检测误报：200 区域拦截页若 URL 未重定向到 not-available 且页面内嵌拦截文案时误判"解锁"；200 无地区码裸判"解锁"
+- ss:// 旧式 base64 载荷含 `/` 时解析静默失败（截断前缀）
+- 油管源 30s 上限为软上限（单次 extract_info 在途不可中断，最坏约 45s）
+- wireguard 链接带 `privateKey` 查询参数时节点被"缺 private-key"过滤（类型近乎全灭）
+- 节点名 "Auto\n" 等变体绕过 mihomo 内置名冲突过滤，整份配置加载失败
+
+### 移除
+- （无）
+
 ## v4.36.0
 
 ### 新增

@@ -360,10 +360,15 @@ async def check_generic(session: aiohttp.ClientSession, proxy: str, url: str, na
                 title = re.sub(r"\s+", " ", m.group(1)).strip().lower() if m else ""
                 if name and name.lower() in title:
                     return "可用"
-                # 大页面结构兜底：真实业务页（登录墙等）通常远大于挑战页
-                if len(text) > 15000 and any(k in low for k in
-                                             ["window.__NUXT", "react-root", 'id="root"',
-                                              "window.__NEXT_DATA__"]):
+                # 大页面结构兜底：真实业务页（登录墙等）通常远大于挑战页；
+                # v4.37.0 收紧：同时排除带挑战关键字的大页面（防 CF 变体页误放行）
+                if (len(text) > 15000
+                        and any(k in low for k in
+                                ["window.__NUXT", "react-root", 'id="root"',
+                                 "window.__NEXT_DATA__"])
+                        and not any(k in low for k in
+                                    ["cf-challenge", "just a moment", "challenge-platform",
+                                     "cf-turnstile", "attention required"])):
                     return "可用"
                 return "封锁"
             return f"({status})"
@@ -429,7 +434,11 @@ async def check_bilibili_tw(session: aiohttp.ClientSession, proxy: str) -> str:
 
 
 async def check_tiktok(session: aiohttp.ClientSession, proxy: str) -> str:
-    """检测 TikTok 解锁：从页面提取地区码，区分风控页"""
+    """检测 TikTok 可访问性：从页面提取地区码，区分风控页
+
+    v4.37.0：地区码语义改"可用(XX)"——页面 200 带地区码只证明"服务可达+识别到地区"，
+    不证明版权内容解锁（首页对绝大多数地区均返回 200），不再以"解锁"误导
+    """
     try:
         async with session.get(
             "https://www.tiktok.com/explore", proxy=proxy, headers=_STREAM_UA,
@@ -450,14 +459,17 @@ async def check_tiktok(session: aiohttp.ClientSession, proxy: str) -> str:
             if ("is-verify" in low or "captcha" in low or "access denied" in low) and not region:
                 return "失败(风控)"
             if region:
-                return f"解锁({region})"
+                return f"可用({region})"
             return "可用"
     except Exception:
         return "错误(连接失败)"
 
 
 async def check_spotify(session: aiohttp.ClientSession, proxy: str) -> str:
-    """检测 Spotify 解锁：地区重定向 / 页面 territory 字段"""
+    """检测 Spotify 可访问性：地区重定向 / 页面 territory 字段
+
+    v4.37.0：地区码语义改"可用(XX)"（服务可达+识别到地区，非版权内容解锁证明）
+    """
     try:
         async with session.get(
             "https://www.spotify.com/", proxy=proxy, headers=_STREAM_UA,
@@ -468,7 +480,7 @@ async def check_spotify(session: aiohttp.ClientSession, proxy: str) -> str:
                 loc = resp.headers.get("Location", "")
                 m = re.search(r"spotify\.com/([a-z]{2})(/|$)", loc)
                 if m:
-                    return f"解锁({m.group(1).upper()})"
+                    return f"可用({m.group(1).upper()})"
                 # 现代 Spotify 重定向到 open.spotify.com（Location 无国家码），
                 # 跟到落地页尝试提取 territory 字段
                 if loc and loc.startswith("http"):
@@ -482,7 +494,7 @@ async def check_spotify(session: aiohttp.ClientSession, proxy: str) -> str:
                         if not m:
                             m = re.search(r"data-territory=\"([a-z]{2})\"", text)
                         if m:
-                            return f"解锁({m.group(1).upper()})"
+                            return f"可用({m.group(1).upper()})"
                         if resp2.status == 200:
                             return "可用"
                         return f"({resp2.status})"
@@ -492,7 +504,7 @@ async def check_spotify(session: aiohttp.ClientSession, proxy: str) -> str:
             if not m:
                 m = re.search(r"data-territory=\"([a-z]{2})\"", text)
             if m:
-                return f"解锁({m.group(1).upper()})"
+                return f"可用({m.group(1).upper()})"
             if resp.status == 200:
                 return "可用"
             return f"({resp.status})"
@@ -501,7 +513,7 @@ async def check_spotify(session: aiohttp.ClientSession, proxy: str) -> str:
 
 
 async def check_steam(session: aiohttp.ClientSession, proxy: str) -> str:
-    """检测 Steam 商店解锁：steamcountry 字段"""
+    """检测 Steam 商店可访问性：steamcountry 字段（v4.37.0：地区码语义改"可用(XX)"）"""
     try:
         async with session.get(
             "https://store.steampowered.com/", proxy=proxy, headers=_STREAM_UA,
@@ -511,13 +523,13 @@ async def check_steam(session: aiohttp.ClientSession, proxy: str) -> str:
             text = await resp.text()
             m = re.search(r'"steamcountry"\s*:\s*"([a-z]{2})"', text, re.IGNORECASE)
             if m:
-                return f"解锁({m.group(1).upper()})"
+                return f"可用({m.group(1).upper()})"
             # cookie 兜底（实测响应头 cookie 名为 steamCountry，大写 C）
             cc = resp.cookies.get("steamCountry") or resp.cookies.get("steamcountry")
             if cc:
                 code = str(cc.value).split("%")[0][:2]
                 if code.isalpha():
-                    return f"解锁({code.upper()})"
+                    return f"可用({code.upper()})"
             if resp.status == 200:
                 return "可用"
             return f"({resp.status})"
@@ -526,7 +538,7 @@ async def check_steam(session: aiohttp.ClientSession, proxy: str) -> str:
 
 
 async def check_primevideo(session: aiohttp.ClientSession, proxy: str) -> str:
-    """检测 Prime Video 解锁：territory 字段"""
+    """检测 Prime Video 可访问性：territory 字段（v4.37.0：地区码语义改"可用(XX)"）"""
     try:
         async with session.get(
             "https://www.primevideo.com/", proxy=proxy, headers=_STREAM_UA,
@@ -543,7 +555,7 @@ async def check_primevideo(session: aiohttp.ClientSession, proxy: str) -> str:
                     region = m.group(1)
                     break
             if region:
-                return f"解锁({region})"
+                return f"可用({region})"
             if resp.status == 200:
                 return "可用"
             return f"({resp.status})"
@@ -552,7 +564,11 @@ async def check_primevideo(session: aiohttp.ClientSession, proxy: str) -> str:
 
 
 async def check_max(session: aiohttp.ClientSession, proxy: str) -> str:
-    """检测 Max(HBO) 解锁：可用页 vs 区域不可用页"""
+    """检测 Max(HBO) 解锁：可用页 vs 区域不可用页
+
+    v4.37.0：补页面文案校验（与 check_disney 对齐）——URL 未重定向到 not-available
+    但页面内嵌区域拦截文案时不再误判；200 但无 countryCode 降为"可用"而非裸"解锁"
+    """
     try:
         async with session.get(
             "https://www.max.com/", proxy=proxy, headers=_STREAM_UA,
@@ -563,9 +579,16 @@ async def check_max(session: aiohttp.ClientSession, proxy: str) -> str:
             if "not-available" in final_url or "unavailable" in final_url.lower():
                 return "失败(区域不可用)"
             text = await resp.text()
+            low = text.lower()
+            # 页面文案区域拦截（URL 未重定向时的兜底，与 check_disney 对齐）
+            if any(k in low for k in ("not available in your region", "not available in your country",
+                                      "unavailable in your region", "choose your region")):
+                return "失败(区域不可用)"
             m = re.search(r'"countryCode"\s*:\s*"([A-Z]{2})"', text)
             if resp.status == 200:
-                return f"解锁({m.group(1)})" if m else "解锁"
+                if m:
+                    return f"解锁({m.group(1)})"
+                return "可用"  # v4.37.0：200 但无地区码 → 仅"可用"，不裸判解锁
             return f"({resp.status})"
     except Exception:
         return "错误(连接失败)"

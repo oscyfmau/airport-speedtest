@@ -19,7 +19,8 @@ async def check_one_node_webpage(session: aiohttp.ClientSession, proxy: str,
 
     ip_info 为当前节点 IP 质量结果，落地为 CN 时自动换国内站点（百度/哔哩哔哩/腾讯）。
     """
-    urls = WPS_CN_URLS if (ip_info or {}).get("country") == "CN" else WPS_INTERNATIONAL_URLS
+    # v4.37.0：country 大小写不敏感（小写 "cn" 此前误走国际站点，靠全失败回退兜底）
+    urls = WPS_CN_URLS if str((ip_info or {}).get("country") or "").upper() == "CN" else WPS_INTERNATIONAL_URLS
     results: dict = {}
     group = "cn" if urls == WPS_CN_URLS else "intl"
 
