@@ -9,7 +9,7 @@ Pull all nodes from an airport subscription, test latency, speed, streaming unlo
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Downloads](https://img.shields.io/github/downloads/oscyfmau/airport-speedtest/total?style=flat-square)](https://github.com/oscyfmau/airport-speedtest/releases)
 
-Version: v4.34.0 | Repository: [github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) | [Changelog](CHANGELOG.md)
+Version: v4.35.0 | Repository: [github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) | [Changelog](CHANGELOG.md)
 
 > This project was written by AI and developed for personal needs — take it as-is.
 
@@ -21,7 +21,7 @@ Version: v4.34.0 | Repository: [github.com/oscyfmau/airport-speedtest](https://g
 
 ## Quick Start (3 Steps, No Command Line Skills Needed)
 
-1. **Download**: open the [Releases page](https://github.com/oscyfmau/airport-speedtest/releases), download the latest `airport-speedtest-v4.34.0.zip` (a slim package with everything needed to run), unzip it, then read `使用教程.txt` inside first (if you know git you can also `git clone`)
+1. **Download**: open the [Releases page](https://github.com/oscyfmau/airport-speedtest/releases), download the latest `airport-speedtest-v4.35.0.zip` (a slim package with everything needed to run), unzip it, then read `使用教程.txt` inside first (if you know git you can also `git clone`)
 2. **Fill in the subscription**: in the unzipped folder, copy `代理.txt.example`, rename it to `代理.txt`, open it with Notepad, paste your subscription link and save
    - What is a subscription link? A URL provided by your airport service provider (usually starts with `https://` and contains all node info); get it from the "Copy subscription" option on the airport website or in the client app
 3. **Run**:
@@ -65,7 +65,7 @@ The mihomo core downloads automatically on first run to `bin/` (about 47MB) — 
 
 Either of the two ways:
 
-- No git: go to the [Releases page](https://github.com/oscyfmau/airport-speedtest/releases), download the latest `airport-speedtest-v4.34.0.zip` (slim package, run core files only) and unzip it; download `Source code (zip)` instead only if you want to modify the code
+- No git: go to the [Releases page](https://github.com/oscyfmau/airport-speedtest/releases), download the latest `airport-speedtest-v4.35.0.zip` (slim package, run core files only) and unzip it; download `Source code (zip)` instead only if you want to modify the code
 - With git:
 
 ```bash
@@ -335,6 +335,14 @@ The mihomo core is downloaded from GitHub (~47MB) and may fail on some networks.
 - IP quality checks go through the node tunnel: the IP sent to ip-api.com / ipapi.is / ipwho.is / api.ip.sb is the **node's exit IP**, not yours; your real IP is only exposed to the subscription server, GitHub (core download) and, if enabled, Google via direct YouTube link resolution
 - In logs (`log/`), sensitive URL params (token/password, etc.) are automatically masked; node passwords/UUIDs never appear in logs or reports
 - The tool has no telemetry or analytics
+
+### Security notes (v4.35.0)
+
+- Measurement requests (speed / streaming / IP / webpage) validate TLS certificates by default (`_verified_ssl`) to prevent egress-proxy MITM; `_no_verify_ssl` is kept as a compatibility interface and is no longer used
+- Core download: when the official release ships a `.sha256` file it is verified; otherwise archive integrity is checked (zip CRC / gzip decompression) with a warning
+- Temporary mihomo configs (containing node passwords/UUIDs/private keys) are written with mode 0600 (POSIX); stale-file cleanup window reduced from 6h to 2h
+- Subscription parsing filters private / link-local / multicast / reserved-address nodes (prevents malicious subscriptions from routing traffic to your LAN), and rejects subscription redirects to internal addresses
+- Abnormal exits now return a non-zero exit code (run.bat pauses to show the error); report-management index `0`/out-of-range no longer hits negative-index deletion of the oldest report; Ctrl+C inside sub-menus returns to the upper menu instead of exiting the program
 
 ## Changelog & Credits
 

@@ -9,7 +9,7 @@
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Downloads](https://img.shields.io/github/downloads/oscyfmau/airport-speedtest/total?style=flat-square)](https://github.com/oscyfmau/airport-speedtest/releases)
 
-版本：v4.34.0 ｜ 仓库：[github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) ｜ [更新记录](CHANGELOG.md)
+版本：v4.35.0 ｜ 仓库：[github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) ｜ [更新记录](CHANGELOG.md)
 
 > 本项目由 AI 编写完成，因个人测速需求而开发，按需取用。
 
@@ -21,7 +21,7 @@
 
 ## 快速上手（三步，不会命令行也能用）
 
-1. **下载**：打开 [Releases 页面](https://github.com/oscyfmau/airport-speedtest/releases)，下载最新版的 `airport-speedtest-v4.34.0.zip`（精简包，含运行所需的全部文件）并解压，解压后先看里面的 `使用教程.txt`（会用 git 也可以 `git clone`）
+1. **下载**：打开 [Releases 页面](https://github.com/oscyfmau/airport-speedtest/releases)，下载最新版的 `airport-speedtest-v4.35.0.zip`（精简包，含运行所需的全部文件）并解压，解压后先看里面的 `使用教程.txt`（会用 git 也可以 `git clone`）
 2. **填订阅**：把解压目录里的 `代理.txt.example` 复制一份，改名为 `代理.txt`，用记事本打开，粘贴你的订阅链接后保存
    - 什么是订阅链接？机场服务商提供的网址（一般以 `https://` 开头，内含全部节点信息），在机场官网或客户端 App 的「复制订阅」处获得
 3. **运行**：
@@ -65,7 +65,7 @@ mihomo 内核无需手动下载，首次运行时自动下载到 `bin/`（约 47
 
 两种方式任选：
 
-- 不用 git：到 [Releases 页面](https://github.com/oscyfmau/airport-speedtest/releases) 下载最新版 `airport-speedtest-v4.34.0.zip`（精简包，仅含运行核心文件）并解压；需要自行改代码时再下载 `Source code (zip)`
+- 不用 git：到 [Releases 页面](https://github.com/oscyfmau/airport-speedtest/releases) 下载最新版 `airport-speedtest-v4.35.0.zip`（精简包，仅含运行核心文件）并解压；需要自行改代码时再下载 `Source code (zip)`
 - 用 git：
 
 ```bash
@@ -335,6 +335,14 @@ mihomo 内核需要从 GitHub 下载（约 47MB），国内网络可能失败。
 - IP 质量检测经节点隧道发起，发送给 ip-api.com / ipapi.is / ipwho.is / api.ip.sb 的是**节点出口 IP**，不是你的真实 IP；你的真实 IP 仅暴露给订阅服务器、GitHub（内核下载）与可选开启的油管直连解析（Google）
 - 日志（`log/`）中订阅 URL 的 token/password 等参数会被自动遮蔽；节点密码/UUID 不会写入日志与报告
 - 工具无任何遥测或统计上报
+
+### 安全说明（v4.35.0）
+
+- 测量请求（测速/流媒体/IP/网页）默认校验证书（`_verified_ssl`），防出口代理 MITM 窃听；`_no_verify_ssl` 保留为兼容接口不再使用
+- 内核下载：官方发布存在同名 `.sha256` 校验文件时核验 SHA256，缺失时做压缩包完整性校验（zip CRC / gzip 解压校验）并提示
+- 临时 mihomo 配置（含节点密码/UUID/private-key）落盘权限 0600（POSIX），残留清理窗口 6 小时→2 小时
+- 订阅解析过滤私网/链路本地/组播/保留地址节点（防恶意订阅把流量导向内网），订阅重定向终点为内网地址时拒绝
+- 异常退出置非零退出码（run.bat 会停留显示报错）；结果管理编号 `0`/越界不再命中负索引误删最旧报告；菜单内 Ctrl+C 返回上级菜单，不再直接退出程序
 
 ## 更新记录与致谢
 

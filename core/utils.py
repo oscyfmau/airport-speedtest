@@ -131,8 +131,17 @@ def _flag_to_text(s: str) -> str:
     return new.strip() if new != s else s
 
 
+def _verified_ssl() -> ssl.SSLContext:
+    """构建校验证书的 SSL 上下文（v4.35.0 起测量请求默认使用，防出口 MITM 窃听）"""
+    return ssl.create_default_context()
+
+
 def _no_verify_ssl() -> ssl.SSLContext:
-    """构建跳过证书校验的 SSL 上下文（本机经 mihomo 隧道访问目标站用）"""
+    """构建跳过证书校验的 SSL 上下文。
+
+    v4.35.0 起保留为兼容接口（外部引用/必要时显式回退），工具内测量请求已全部改走
+    `_verified_ssl`；旧实现曾全量关闭校验，出口代理可 MITM 测量流量。
+    """
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
@@ -251,4 +260,4 @@ def _system_proxy_info() -> str:
     except Exception:
         return ""
 
-__all__ = ['HAS_CLOUDSCRAPER', 'HAS_YTDLP', 'DIRECT_PROXIES', '_SENSITIVE_PARAMS', '_mask_url', '_URL_IN_TEXT_RE', '_URL_REL_RE', '_safe_exc_str', '_FLAG_PAIR_RE', '_flag_to_text', '_no_verify_ssl', '_remove_prefix', 'b64decode_pad', '_str_width', '_pad_right', '_trunc_width', '_fmt_size', '_sanitize_surrogates', '_pbar_ticker', '_system_proxy_info']
+__all__ = ['HAS_CLOUDSCRAPER', 'HAS_YTDLP', 'DIRECT_PROXIES', '_SENSITIVE_PARAMS', '_mask_url', '_URL_IN_TEXT_RE', '_URL_REL_RE', '_safe_exc_str', '_FLAG_PAIR_RE', '_flag_to_text', '_verified_ssl', '_no_verify_ssl', '_remove_prefix', 'b64decode_pad', '_str_width', '_pad_right', '_trunc_width', '_fmt_size', '_sanitize_surrogates', '_pbar_ticker', '_system_proxy_info']

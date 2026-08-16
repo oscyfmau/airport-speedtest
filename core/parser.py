@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """订阅解析器：协议解析 / 订阅拉取与解码 / 去重 / 流量信息捕获 / 油管源解析"""
+import ipaddress
 import json
 import os
 import re
@@ -632,6 +633,15 @@ def _try_fetch(url: str, ua: str) -> str:
         # v4.27.0：非 2xx 视为拉取失败（404/500 错误页不当作正文解析）
         if getattr(resp, "status_code", 200) >= 400:
             raise RuntimeError(f"订阅拉取 HTTP {resp.status_code}")
+        # v4.35.0：重定向终点防内网（防恶意端点把请求重定向到本机/内网/云元数据地址）
+        try:
+            final_host = (urlparse(str(getattr(resp, "url", ""))).hostname or "").strip("[]")
+            final_ip = ipaddress.ip_address(final_host)
+            if (final_ip.is_private or final_ip.is_loopback or final_ip.is_link_local
+                    or final_ip.is_reserved or final_ip.is_unspecified):
+                raise RuntimeError(f"订阅重定向到内网地址: {final_host}")
+        except ValueError:
+            pass  # 终点为域名（DNS 层不在本工具可控范围），放行
         # 捕获订阅流量信息（v4.20.0 起流量倍率停用，_SUB_INFO 仅保留接口）：首个带 header 的响应为准
         try:
             if not state._SUB_INFO.get(url):
@@ -820,6 +830,15 @@ def _is_valid_node(n: ProxyNode) -> bool:
     # 排除本地地址
     if n.server in ("127.0.0.1", "0.0.0.0", "localhost", "", "::1"):
         return False
+    # 排除私网/链路本地/组播/保留/未指定地址（v4.35.0：防恶意订阅把测速流量导向内网/云元数据地址）
+    try:
+        ip = ipaddress.ip_address(n.server)
+        if (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast
+                or ip.is_reserved or ip.is_unspecified):
+            logger.warning("节点 %s 地址 %s 为内网/保留地址，已过滤", n.name, n.server)
+            return False
+    except ValueError:
+        pass  # 域名（非 IP），放行；DNS 层解析结果不在解析器可控范围
     # 排除端口 0
     if n.port == 0:
         return False

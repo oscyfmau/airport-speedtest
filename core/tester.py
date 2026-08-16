@@ -38,7 +38,7 @@ async def test_node_speed(mihomo, node: ProxyNode) -> tuple:
     window_secs = state.SPEED_WINDOW_SECONDS
     num_slots = int(window_secs)
     try:
-        ssl_ctx = _no_verify_ssl()
+        ssl_ctx = _verified_ssl()  # v4.35.0：默认校验证书（防出口 MITM）
         connector = aiohttp.TCPConnector(ssl=ssl_ctx)
         async with aiohttp.ClientSession(connector=connector) as sess:
             # 先测 HTTP 延迟（失败不阻塞测速）

@@ -60,7 +60,7 @@ async def run_webpage_test(mihomo: MihomoEngine, nodes: list[ProxyNode],
     pbar = tqdm(total=len(nodes), desc="网页模拟", unit="节点", mininterval=1.0, leave=False)
     stop = asyncio.Event()
     ticker = asyncio.create_task(_pbar_ticker(pbar, stop))
-    ssl_ctx = _no_verify_ssl()
+    ssl_ctx = _verified_ssl()  # v4.35.0：默认校验证书（防出口 MITM）
     try:
         for node in nodes:
             display = _flag_to_text(node.name)

@@ -288,7 +288,7 @@ async def run_ip_quality_test(mihomo: MihomoEngine, nodes: list[ProxyNode],
     pbar = tqdm(total=len(nodes), desc="IP检测", unit="节点", mininterval=1.0, leave=False)
     stop = asyncio.Event()
     ticker = asyncio.create_task(_pbar_ticker(pbar, stop))
-    ssl_ctx = _no_verify_ssl()
+    ssl_ctx = _verified_ssl()  # v4.35.0：默认校验证书（防出口 MITM）
     # 每次请求用独立连接，避免连接池复用导致 ipapi.is 缓存
     seen_ips = set()  # 与并行路径一致：同 IP 节点全集标记
     try:

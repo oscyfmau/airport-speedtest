@@ -21,6 +21,7 @@ from .runner import *
 from .settings import *
 from .utils import *
 
+
 def _open_report(path: str) -> bool:
     """打开报告文件（Windows os.startfile；macOS open；Linux xdg-open；失败不崩溃）
 
@@ -338,6 +339,8 @@ def _menu_manage_results() -> None:
             try:
                 if act.startswith("D"):
                     idx = int(act[1:])
+                    if not (1 <= idx <= len(reports)):
+                        raise IndexError  # v4.35.0：0/越界会命中负索引 reports[-1] 误删最旧报告
                     base, files = reports[idx - 1]
                     for f in files:
                         try:
@@ -347,6 +350,8 @@ def _menu_manage_results() -> None:
                     print(f"[OK] 已删除: {base}（{len(files)} 个文件）")
                 else:
                     idx = int(act)
+                    if not (1 <= idx <= len(reports)):
+                        raise IndexError  # v4.35.0：0 会命中负索引误开最旧报告
                     base, files = reports[idx - 1]
                     pngs = [f for f in files if f.endswith(".png")]
                     _open_report(os.path.join(OUTPUT_DIR, pngs[0] if pngs else files[0]))
@@ -900,58 +905,66 @@ async def async_main():
         logger.debug("菜单选择: %s（级别=%s）", choice, menu_level,
                      extra=_ev("menu_choice", {"choice": choice, "level": menu_level}))
 
-        if menu_level == "main":
-            if choice in ("1", "2", "3", "4"):
-                mode_map = {"1": "normal", "2": "speed",
-                            "3": "streaming_ai", "4": "streaming_all"}
-                last_result_path = await _menu_run_flow(mode_map[choice])
-            elif choice == "5":
-                last_result_path = await _menu_run_flow("quick")  # v4.30.0：快速检测
-            elif choice == "6":
-                menu_level = "more"
-                continue
-            elif choice == "0":
-                print("再见!")
-                break
-            else:
-                _invalid_choice(choice)
-        elif menu_level == "more":
-            if choice == "1":
-                _menu_stability()
-            elif choice == "2":
-                _menu_compare()  # v4.30.0：结果对比
-            elif choice == "3":
-                _menu_group_report()  # v4.31.0：订阅分组对比
-            elif choice == "4":
-                last_result_path = await _menu_filtered_run()
-            elif choice == "5":
-                _menu_view_last(last_result_path)
-            elif choice == "6":
-                _menu_manage_results()
-            elif choice == "7":
-                _menu_manage_subs()
-            elif choice == "8":
-                _menu_settings()
-            elif choice == "9":
-                menu_level = "maint"
-                continue
-            elif choice == "0":
-                menu_level = "main"
-                continue
-            else:
-                _invalid_choice(choice)
-        else:  # maint
-            if choice == "1":
-                _menu_update_kernel()
-            elif choice == "2":
-                _menu_env_info()
-            elif choice == "3":
-                _menu_cleanup()  # v4.31.0：清理旧报告与日志
-            elif choice == "0":
-                menu_level = "more"
-                continue
-            else:
-                _invalid_choice(choice)
+        try:
+            if menu_level == "main":
+                if choice in ("1", "2", "3", "4"):
+                    mode_map = {"1": "normal", "2": "speed",
+                                "3": "streaming_ai", "4": "streaming_all"}
+                    last_result_path = await _menu_run_flow(mode_map[choice])
+                elif choice == "5":
+                    last_result_path = await _menu_run_flow("quick")  # v4.30.0：快速检测
+                elif choice == "6":
+                    menu_level = "more"
+                    continue
+                elif choice == "0":
+                    print("再见!")
+                    break
+                else:
+                    _invalid_choice(choice)
+            elif menu_level == "more":
+                if choice == "1":
+                    _menu_stability()
+                elif choice == "2":
+                    _menu_compare()  # v4.30.0：结果对比
+                elif choice == "3":
+                    _menu_group_report()  # v4.31.0：订阅分组对比
+                elif choice == "4":
+                    last_result_path = await _menu_filtered_run()
+                elif choice == "5":
+                    _menu_view_last(last_result_path)
+                elif choice == "6":
+                    _menu_manage_results()
+                elif choice == "7":
+                    _menu_manage_subs()
+                elif choice == "8":
+                    _menu_settings()
+                elif choice == "9":
+                    menu_level = "maint"
+                    continue
+                elif choice == "0":
+                    menu_level = "main"
+                    continue
+                else:
+                    _invalid_choice(choice)
+            else:  # maint
+                if choice == "1":
+                    _menu_update_kernel()
+                elif choice == "2":
+                    _menu_env_info()
+                elif choice == "3":
+                    _menu_cleanup()  # v4.31.0：清理旧报告与日志
+                elif choice == "0":
+                    menu_level = "more"
+                    continue
+                else:
+                    _invalid_choice(choice)
+        except KeyboardInterrupt:
+            # v4.35.0：子菜单/功能内 Ctrl+C 不再直接退出程序——返回上级菜单重绘
+            # （测试运行中的 Ctrl+C 由 run_test 内部捕获生成部分结果，不会到达这里）
+            print("\n（返回上级菜单）")
+            if menu_level != "main":
+                menu_level = "main" if menu_level == "more" else "more"
+            continue
 
 
 def main():
@@ -982,6 +995,7 @@ def main():
         pass  # 管道输入提前结束（如 echo 1 | python ...）：正常退出，不记异常
     except Exception:
         logger.exception("程序异常退出", extra=_ev("run_exception", {"phase": "main"}))
+        sys.exit(1)  # v4.35.0：真实异常置非零退出码（run.bat `if errorlevel 1 pause` 兜底可见报错）
     finally:
         _cleanup_empty_log()
 

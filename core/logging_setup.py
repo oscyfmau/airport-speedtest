@@ -23,7 +23,8 @@ _LOG_HANDLER = None
 
 
 def _cleanup_stale_configs():
-    """清理历史运行（异常退出）残留的临时配置文件（只删超过 6 小时的，避免误删并发实例配置）"""
+    """清理历史运行（异常退出）残留的临时配置文件（只删超过 2 小时的，避免误删并发实例配置；
+    v4.35.0：残留窗口 6h→2h，减少含节点凭据的临时 yaml 在 %TEMP% 的存留时长）"""
     try:
         tmp = tempfile.gettempdir()
         now = time.time()
@@ -31,7 +32,7 @@ def _cleanup_stale_configs():
             if (f.startswith("mihomo_") or f.startswith("mihomo_worker_")) and f.endswith(".yaml"):
                 try:
                     p = os.path.join(tmp, f)
-                    if now - os.path.getmtime(p) > 6 * 3600:
+                    if now - os.path.getmtime(p) > 2 * 3600:
                         os.remove(p)
                 except OSError:
                     pass

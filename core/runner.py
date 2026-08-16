@@ -83,7 +83,7 @@ async def _run_node_pipeline(pool: MihomoWorkerPool, node_tasks: list,
     for _ in pool.workers:
         await queue.put(None)  # 终止哨兵
 
-    ssl_ctx = _no_verify_ssl()
+    ssl_ctx = _verified_ssl()  # v4.35.0：默认校验证书（防出口 MITM）
     ip_lock = asyncio.Lock()
     seen_ips: set = set()
     last_ip_check = [0.0]  # 全局节流：免费 IP API 有限额，串行 + 最小间隔防 429
@@ -211,7 +211,7 @@ async def _run_quick_pipeline(pool: MihomoWorkerPool, nodes: list[ProxyNode],
         await queue.put(n)
     for _ in pool.workers:
         await queue.put(None)  # 终止哨兵
-    ssl_ctx = _no_verify_ssl()
+    ssl_ctx = _verified_ssl()  # v4.35.0：默认校验证书（防出口 MITM）
     pbar = tqdm(total=len(nodes), desc="快速检测", unit="节点", mininterval=1.0, leave=False)
 
     async def worker_loop(worker: MihomoWorker):
@@ -251,7 +251,7 @@ async def _run_quick_pipeline(pool: MihomoWorkerPool, nodes: list[ProxyNode],
 async def _run_quick_serial(mihomo: MihomoEngine, nodes: list[ProxyNode],
                             results_dict: dict) -> None:
     """quick 串行回退：主引擎 switch_proxy 逐节点（池不可用时）"""
-    ssl_ctx = _no_verify_ssl()
+    ssl_ctx = _verified_ssl()  # v4.35.0：默认校验证书（防出口 MITM）
     pbar = tqdm(total=len(nodes), desc="快速检测", unit="节点", mininterval=1.0, leave=False)
     try:
         for node in nodes:

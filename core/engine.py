@@ -3,6 +3,7 @@
 """mihomo 引擎：内核获取与更新 / 配置生成 / 进程管理 / 热重载 / 并行工作池 / TCP 直连检测"""
 import asyncio
 import gzip
+import hashlib
 import os
 import platform
 import re
@@ -119,7 +120,7 @@ async def run_tcp_probe_pool(binary_path: str, candidates: list[ProxyNode]) -> d
     for _ in pool.workers:
         await queue.put(None)  # 终止哨兵
 
-    ssl_ctx = _no_verify_ssl()
+    ssl_ctx = _verified_ssl()  # v4.35.0：默认校验证书（防出口 MITM）
     pbar = tqdm(total=len(candidates), desc="TCP探测", unit="节点", mininterval=1.0, leave=False)
 
     async def probe_loop(worker: MihomoWorker):
@@ -341,11 +342,36 @@ class MihomoEngine:
             if not zip_path or not os.path.exists(zip_path):
                 return ""
 
-            # 解压：Windows 为 zip（校验 zip-slip）；Linux/macOS 为单文件 gzip
+            # v4.35.0：下载校验——mihomo 官方发布件不附带 .sha256 资产（2026-08 实测），
+            # 存在同名 .sha256 校验文件时核验 SHA256；缺失时仅做压缩包完整性校验并 WARNING 提示
+            try:
+                sha_resp = _requests.get(zip_path + ".sha256", timeout=15,
+                                         proxies=dict(DIRECT_PROXIES))  # v4.28.0：强制直连
+                if sha_resp.status_code == 200:
+                    expected = sha_resp.text.strip().split()[0].lower()
+                    digest = hashlib.sha256()
+                    with open(zip_path, "rb") as f:
+                        for chunk in iter(lambda: f.read(1 << 16), b""):
+                            digest.update(chunk)
+                    if digest.hexdigest() != expected:
+                        logger.error("SHA256 校验失败: %s（期望 %s，实际 %s），已删除",
+                                     fname, expected, digest.hexdigest())
+                        os.remove(zip_path)
+                        return ""
+                    logger.info("SHA256 校验通过: %s", fname)
+                else:
+                    logger.warning("官方未提供 %s 校验文件，仅做压缩包完整性校验", fname + ".sha256")
+            except Exception as e:
+                logger.warning("SHA256 校验不可用: %s", _safe_exc_str(e))
+
+            # 解压：Windows 为 zip（校验 zip-slip + 完整性）；Linux/macOS 为单文件 gzip
             if ext == ".exe":
                 base_real = os.path.realpath(target_dir)
                 try:
                     with zipfile.ZipFile(zip_path, "r") as zf:
+                        bad = zf.testzip()  # v4.35.0：CRC 完整性校验（截断/损坏包不落盘）
+                        if bad is not None:
+                            raise RuntimeError(f"压缩包损坏: {bad}")
                         for name in zf.namelist():
                             tgt = os.path.realpath(os.path.join(target_dir, name))
                             if not (tgt == base_real or tgt.startswith(base_real + os.sep)):
@@ -396,6 +422,10 @@ class MihomoEngine:
         os.close(fd)
         with open(path, "w", encoding="utf-8") as f:
             yaml.dump(config, f, allow_unicode=True, default_flow_style=False)
+        try:
+            os.chmod(path, 0o600)  # v4.35.0：凭据文件权限收紧（POSIX 生效；Windows 无 ACL 语义）
+        except OSError:
+            pass
         self.config_path = path
         return path
 
@@ -560,6 +590,10 @@ class MihomoWorker:
         os.close(fd)
         with open(path, "w", encoding="utf-8") as f:
             yaml.dump(config, f, allow_unicode=True, default_flow_style=False)
+        try:
+            os.chmod(path, 0o600)  # v4.35.0：凭据文件权限收紧（POSIX 生效；Windows 无 ACL 语义）
+        except OSError:
+            pass
         self.config_path = path
         return path
 

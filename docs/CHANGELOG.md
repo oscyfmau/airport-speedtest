@@ -8,6 +8,27 @@
 
 ---
 
+## v4.35.0
+
+### 新增
+- `utils._verified_ssl()`：校验证书的 SSL 上下文（测量请求默认使用）；`_no_verify_ssl` 保留为兼容接口不再被调用
+
+### 修改
+- 测量请求 8 处 SSL 上下文默认校验证书（engine/ip_quality/runner×3/streaming/tester/webpage，防出口 MITM 窃听）
+- 内核下载：官方发布存在同名 `.sha256` 校验文件时核验 SHA256（不匹配即删除中止），缺失时 WARNING 并做 zip `testzip()`/gzip 解压完整性校验（`engine._download_mihomo`）
+- 临时 mihomo 配置（含节点凭据）落盘后 `os.chmod(path, 0o600)`（`engine.generate_config`/`_write_config`）；残留清理窗口 6h→2h（`logging_setup._cleanup_stale_configs`）
+- 订阅节点过滤增加私网/链路本地/组播/保留/未指定地址（`parser._is_valid_node`，`ipaddress` 判定；域名与非 IP 放行）
+- 订阅重定向终点为内网地址时拒绝拉取（`parser._try_fetch`）
+- `cli.main()` 异常分支补 `sys.exit(1)`（run.bat `if errorlevel 1 pause` 兜底可见报错；KeyboardInterrupt/EOFError 维持退出码 0）
+- 菜单分发层捕获 KeyboardInterrupt：子菜单/功能内 Ctrl+C 返回上级菜单重绘（`cli.async_main`；测试运行中的中断仍由 `run_test` 内部捕获生成部分结果）
+
+### 修复
+- 结果管理输入 `0`/`D0` 与越界编号命中 Python 负索引 `reports[-1]` 静默误删/误开最旧报告（`cli._menu_manage_results` 增加 `1 <= idx <= len(reports)` 校验）
+- 二/三级子菜单内 Ctrl+C 此前从子函数冒泡直接退出整个程序（未捕获 KeyboardInterrupt），与"Ctrl+C 返回上级"承诺不符
+
+### 移除
+- （无）
+
 ## v4.34.0
 
 ### 新增
