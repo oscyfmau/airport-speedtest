@@ -362,9 +362,10 @@ def _ctxt(cid, r):
 
 def sort_results(results, sort_by):
     # sort_by = "none"|"default"|"max_desc"|"max_asc"|"avg_desc"|"avg_asc"|"name_asc"|"name_desc"
-    if sort_by == "none":
+    # v4.33.0：default 与 none 同义 = 保持订阅原始顺序（默认排序改为订阅顺序）
+    if sort_by in ("none", "default"):
         return list(results)  # 保持订阅原始顺序
-    if sort_by in ("default", "max_desc"):
+    if sort_by == "max_desc":
         return sorted(results, key=lambda r: (r.max_speed is None, r.speed is None, -(r.max_speed or r.speed or 0)))
     if sort_by == "max_asc":
         return sorted(results, key=lambda r: (r.max_speed is None, r.speed is None, (r.max_speed or r.speed or 0)))
@@ -494,6 +495,8 @@ def generate_report_image(results, mode, total_time, sort_by="default", display_
 
     v4.32.0 视觉改版：整格色块 + 白网格线 + 纯黑直绘文字 + 每秒恒 7 柱；
     版式参数与取色规则见《报告图片设计方案》（REPORT_* / LATENCY_RAMP / SPEED_* 常量）。
+    v4.33.0：全表统一常规字体（不加粗）；quick 模式补回每秒速度柱；
+    选中 ≥2 份订阅时按 sub_index 分组绘制（组间"订阅 N（M 节点）"横条）。
     report_ts 为本次运行共享时间戳（缺省时函数内部生成，兼容直接调用）。
     """
     display_mode = display_mode or mode
@@ -509,11 +512,10 @@ def generate_report_image(results, mode, total_time, sort_by="default", display_
             img.close()
         return fpath
 
-    font = _font(12)       # 常规 12px：表头/名称/类型/流媒体/状态格
+    font = _font(12)       # 全表统一常规 12px（v4.33.0：数值格不再加粗，厚度一致）
     fsm = _font(10)        # 页眉行2 / 序号 / 页脚行
     fsm2 = _font(9)        # 页脚行3 右侧品牌行
-    fbd = _font_bd(12)     # 数值格 12px 加粗
-    flg = _font_bd(14)     # 页眉标题 14px 加粗
+    flg = _font(14)        # 页眉标题 14px
     has_ip = any(r.ip_info for r in results if r.ip_info)
     has_sp = any(r.streaming for r in results if r.streaming)
     has_web = any(r.webpage for r in results if r.webpage)
@@ -550,19 +552,20 @@ def generate_report_image(results, mode, total_time, sort_by="default", display_
         for sid in [s["id"] for s in FULL_STREAMING_SERVICES if s["id"] in stream_ids]:
             cols.append((sid, name_map.get(sid, sid), 64, "c"))
     elif mode == "quick":
-        # v4.30.0 快速检测：4 核心流媒体 + 近似速度（不画每秒柱——并行数据画柱易误导）
+        # v4.30.0 快速检测：4 核心流媒体 + 近似速度；
+        # v4.33.0：补回每秒速度柱（并行数据柱高仅表起伏、柱色按绝对速度，口径与近似测速一致）
         cols = [("idx","#",32,"c"),("name","节点名称",180,"l"),("type","类型",68,"c"),
                 ("ping","延迟RTT",76,"c"),("http","HTTP延迟",80,"c")]
         for sid in [s["id"] for s in FULL_STREAMING_SERVICES if s["id"] in stream_ids]:
             cols.append((sid, name_map.get(sid, sid), 64, "c"))
         if has_spd:
-            cols += [("speed","平均速度",82,"c"),("maxspeed","最高速度",82,"c")]
+            cols += [("speed","平均速度",82,"c"),("maxspeed","最高速度",82,"c"),("speed_bar","每秒速度",100,"c")]
         cols.append(("udp","UDP类型",58,"c"))
     else:
         cols = [("idx","#",30,"c"),("name","节点名称",180,"l")]
 
     # ---- 计算列宽 ----
-    # 数值列（延迟/速度）自适应列宽 = max(默认宽, 最长文本(msyhbd 12px)宽 + 14)，数字永不被截断；
+    # 数值列（延迟/速度）自适应列宽 = max(默认宽, 最长文本宽 + 20)（左右各 10px 余量，数字永不被截断）；
     # 其余列沿用现有自动估宽逻辑（内容自适应 + 截断加省略号）
     numeric_cids = {"ping", "http", "web_avg", "speed", "maxspeed"}
     cw = {}
@@ -570,29 +573,53 @@ def generate_report_image(results, mode, total_time, sort_by="default", display_
         w = dw
         for r in results:  # 遍历全部行估算列宽（画布上限 300 行）
             txt = _ctxt(cid, r)
-            f = fbd if cid in numeric_cids else font
-            extra = 14 if cid in numeric_cids else 18
+            extra = 20 if cid in numeric_cids else 18
             try:
-                tw = int(f.getlength(txt) + extra)
+                tw = int(font.getlength(txt) + extra)
             except Exception:
-                tw = int(max(dw - 10, len(txt) * 7 + 10))
+                tw = int(max(dw - 10, len(txt) * 12 + 16))
             w = max(w, tw)
         cw[cid] = int(w)
 
     # ---- 版式骨架（v4.32.0） ----
     pad, hh, hdr_h, fh, gap = 14, 40, 30, 54, 2
     rh = 36 if mode in ("speed", "basic", "quick") else 30  # 数据行高按模式
+    band_h = 26  # 多订阅分组横条高度（v4.33.0）
     iw = sum(cw.values())
     tw = int(iw + pad * 2)
     # 最多显示 300 个节点，防止图片内存溢出
     max_rows = 300
     nh = min(len(results), max_rows)
-    th = int(hh + hdr_h + nh * rh + gap + fh)
+
+    # ---- 多订阅分组（v4.33.0）：≥2 份订阅时按 sub_index 分组绘制 ----
+    subs = sorted({r.node.sub_index for r in results if r.node.sub_index is not None})
+    grouped = len(subs) >= 2
+    sr = sort_results(results, sort_by)
+    display_rows = []  # ("node", TestResult) / ("group", 标签)
+    if grouped:
+        groups = []
+        for si in subs:
+            groups.append((f"订阅 {si + 1}", [r for r in sr if r.node.sub_index == si]))
+        rest = [r for r in sr if r.node.sub_index is None]
+        if rest:
+            groups.append(("未知订阅", rest))
+        for label, grp in groups:
+            # 只展示画布能容纳的行（与 300 上限一致），组内保持当前排序
+            room = max_rows - sum(1 for k, _ in display_rows if k == "node")
+            shown = grp[:room]
+            if shown:
+                display_rows.append(("group", f"{label}（{len(shown)} 节点）"))
+                display_rows.extend(("node", r) for r in shown)
+    else:
+        display_rows = [("node", r) for r in sr[:nh]]
+    n_bands = sum(1 for k, _ in display_rows if k == "group")
+
+    th = int(hh + hdr_h + nh * rh + n_bands * band_h + gap + fh)
 
     img = Image.new("RGB", (tw, th), REPORT_PAGE_BG)
     dr = ImageDraw.Draw(img)
 
-    # ---- 页眉（40px）：行1 标题居中加粗，行2 左右分布，y=38 白分隔线 ----
+    # ---- 页眉（40px）：行1 标题居中，行2 左右分布，y=38 白分隔线 ----
     mn = {"speed":"简单测速","basic":"简单测速","normal":"标准测试","full":"完整测速",
           "streaming":"流媒体","streaming_ai":"AI流媒体","streaming_all":"全部流媒体",
           "quick":"快速检测"}
@@ -600,7 +627,7 @@ def generate_report_image(results, mode, total_time, sort_by="default", display_
     dr.text((tw / 2, 9), hdr, font=flg, fill=REPORT_BLACK, anchor="ma")
     dr.text((pad, 27), f"订阅: {len(results)} 节点 | 测试耗时: {total_time:.0f}s",
             font=fsm, fill=REPORT_BLACK, anchor="lm")
-    sort_names = {"none":"订阅顺序","default":"最大速度降序","max_desc":"最大速度降序","max_asc":"最大速度升序",
+    sort_names = {"none":"订阅顺序","default":"订阅顺序","max_desc":"最大速度降序","max_asc":"最大速度升序",
                   "avg_desc":"平均速度降序","avg_asc":"平均速度升序",
                   "name_asc":"名称A→Z","name_desc":"名称Z→A"}
     dr.text((tw - pad, 27), f"排序: {sort_names.get(sort_by, sort_by)}",
@@ -624,20 +651,29 @@ def generate_report_image(results, mode, total_time, sort_by="default", display_
             report_max = max(report_max, v)
 
     # ---- 数据行：先画全部内容（色块+文字+柱），网格线最后画 ----
-    sr = sort_results(results, sort_by)
 
     def _cell(dr_, x_, y_, w_, h_, bg_):
         dr_.rectangle([(x_, y_), (x_ + w_ - 1, y_ + h_ - 1)], fill=bg_)
 
-    for idx, r in enumerate(sr[:nh]):  # 只画画布内的行，页脚才不会被顶出画布
+    line_ys = []   # 各内容行底线的 y（表头底线在最后统一计算）
+    data_idx = 0
+    for kind, item in display_rows:
+        if kind == "group":
+            # 订阅分组横条：通栏 REPORT_HEADER_BG + 黑字左对齐
+            dr.rectangle([(pad, y), (tw - pad, y + band_h)], fill=REPORT_HEADER_BG)
+            dr.text((pad + 8, y + band_h / 2), item, font=font, fill=REPORT_BLACK, anchor="lm")
+            line_ys.append(y + band_h - 1)
+            y += band_h
+            continue
+        r = item
         x = pad
-        zebra = REPORT_ZEBRA[idx % 2]
+        zebra = REPORT_ZEBRA[data_idx % 2]
         for cid, _, _, al in cols:
             w = cw[cid]
             txt = _ctxt(cid, r)
             if cid == "idx":
                 _cell(dr, x, y, w, rh, zebra)
-                dr.text((x + w / 2, y + rh / 2), str(idx + 1), font=fsm,
+                dr.text((x + w / 2, y + rh / 2), str(data_idx + 1), font=fsm,
                         fill=REPORT_BLACK, anchor="mm")
             elif cid == "name":
                 _cell(dr, x, y, w, rh, zebra)
@@ -658,13 +694,13 @@ def generate_report_image(results, mode, total_time, sort_by="default", display_
                     v = _web_value(r)
                 bg = _ramp_lerp(LATENCY_RAMP, v) if v is not None else REPORT_SPECIAL_BG
                 _cell(dr, x, y, w, rh, bg)
-                dr.text((x + w / 2, y + rh / 2), txt, font=fbd, fill=REPORT_BLACK, anchor="mm")
+                dr.text((x + w / 2, y + rh / 2), txt, font=font, fill=REPORT_BLACK, anchor="mm")
             elif cid in ("speed", "maxspeed"):
                 # 速度整格色块：慢红快绿（全表自适应）；无速度 → 斑马底黑字（失败原因）
                 v = _speed_value(r) if cid == "speed" else _maxspeed_value(r)
                 bg = _speed_color(v, report_max) if v is not None else zebra
                 _cell(dr, x, y, w, rh, bg)
-                dr.text((x + w / 2, y + rh / 2), txt, font=fbd, fill=REPORT_BLACK, anchor="mm")
+                dr.text((x + w / 2, y + rh / 2), txt, font=font, fill=REPORT_BLACK, anchor="mm")
             elif cid == "speed_bar":
                 # 每秒速度柱：恒 7 根，直接落在斑马底上（无灰色背景）；柱高=行内起伏、柱色=绝对速度
                 _cell(dr, x, y, w, rh, zebra)
@@ -707,16 +743,17 @@ def generate_report_image(results, mode, total_time, sort_by="default", display_
                 _cell(dr, x, y, w, rh, bg or zebra)
                 dr.text((x + w / 2, y + rh / 2), txt, font=font, fill=REPORT_BLACK, anchor="mm")
             x += w
+        line_ys.append(y + rh - 1)
         y += rh
+        data_idx += 1
 
     # ---- 网格线（先内容、后画线：顺序不可反，否则横线会被下一行填充覆盖） ----
-    table_bottom = hh + hdr_h + nh * rh - 1
+    table_bottom = hh + hdr_h + nh * rh + n_bands * band_h - 1
     bx = pad
     for cid, _, _, _ in cols[:-1]:
         bx += cw[cid]
         dr.line([(bx - 1, hh), (bx - 1, table_bottom)], fill=REPORT_GRID, width=1)
-    for k in range(nh + 1):
-        hy = hh + hdr_h + k * rh - 1
+    for hy in [hh + hdr_h - 1] + line_ys:
         dr.line([(pad, hy), (tw - pad, hy)], fill=REPORT_GRID, width=1)
 
     # ---- 页脚（54px，3 行等距，距数据区 2px） ----

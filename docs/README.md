@@ -9,7 +9,7 @@
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Downloads](https://img.shields.io/github/downloads/oscyfmau/airport-speedtest/total?style=flat-square)](https://github.com/oscyfmau/airport-speedtest/releases)
 
-版本：v4.32.0 ｜ 仓库：[github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) ｜ [更新记录](CHANGELOG.md)
+版本：v4.33.0 ｜ 仓库：[github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) ｜ [更新记录](CHANGELOG.md)
 
 > 本项目由 AI 编写完成，因个人测速需求而开发，按需取用。
 
@@ -21,7 +21,7 @@
 
 ## 快速上手（三步，不会命令行也能用）
 
-1. **下载**：打开 [Releases 页面](https://github.com/oscyfmau/airport-speedtest/releases)，下载最新版的 `airport-speedtest-v4.32.0.zip`（精简包，含运行所需的全部文件）并解压，解压后先看里面的 `使用教程.txt`（会用 git 也可以 `git clone`）
+1. **下载**：打开 [Releases 页面](https://github.com/oscyfmau/airport-speedtest/releases)，下载最新版的 `airport-speedtest-v4.33.0.zip`（精简包，含运行所需的全部文件）并解压，解压后先看里面的 `使用教程.txt`（会用 git 也可以 `git clone`）
 2. **填订阅**：把解压目录里的 `代理.txt.example` 复制一份，改名为 `代理.txt`，用记事本打开，粘贴你的订阅链接后保存
    - 什么是订阅链接？机场服务商提供的网址（一般以 `https://` 开头，内含全部节点信息），在机场官网或客户端 App 的「复制订阅」处获得
 3. **运行**：
@@ -65,7 +65,7 @@ mihomo 内核无需手动下载，首次运行时自动下载到 `bin/`（约 47
 
 两种方式任选：
 
-- 不用 git：到 [Releases 页面](https://github.com/oscyfmau/airport-speedtest/releases) 下载最新版 `airport-speedtest-v4.32.0.zip`（精简包，仅含运行核心文件）并解压；需要自行改代码时再下载 `Source code (zip)`
+- 不用 git：到 [Releases 页面](https://github.com/oscyfmau/airport-speedtest/releases) 下载最新版 `airport-speedtest-v4.33.0.zip`（精简包，仅含运行核心文件）并解压；需要自行改代码时再下载 `Source code (zip)`
 - 用 git：
 
 ```bash
@@ -212,7 +212,7 @@ python core/speed_test.py https://你的订阅链接 --full   # 完整报告
 | `速度过低` | 前 3 秒累计下载不足 64KB，判定为过慢提前终止 |
 | `下载失败` | 8 秒窗口内下载总量不足 256KB（连接失败或拦截页） |
 | `--` | 无数据（节点未进入测速队列或全部下载源失败） |
-| 每秒速度柱状图 | 恒 7 根柱（任意长度采样重采样为 7 点）；柱高=行内 min-max 归一化（只表起伏形状）、柱色=绝对速度（红=慢→绿=快，与速度格同色板、跨行可比）、柱间 1px 白缝、无灰色背景；无每秒数组节点显示 7 根等高矮柱 |
+| 每秒速度柱状图 | 恒 7 根柱（任意长度采样重采样为 7 点）；柱高=行内 min-max 归一化（只表起伏形状）、柱色=绝对速度（红=慢→绿=快，与速度格同色板、跨行可比）、柱间 1px 白缝、无灰色背景；无每秒数组节点显示 7 根等高矮柱；quick 模式同样绘制（v4.33.0 起） |
 
 ### HTTP 状态码（流媒体列括号内的数字）
 
@@ -242,6 +242,8 @@ python core/speed_test.py https://你的订阅链接 --full   # 完整报告
 | `错误(连接失败)` | 请求无法建立连接（节点可能不可达或超时） |
 | `跳过(节点不可达)` | 该节点前 3 个服务全部连接失败，判定为死节点，其余服务不再实测 |
 
+OpenAI/Claude/Perplexity 判别（v4.33.0）：三者的网页端点对数据中心 IP + 非浏览器请求有 Cloudflare 机器人风控（支持区域的节点也会被 403 误报"封锁"），改用 API 端点判定——`api.openai.com`（无效 key→401=区域放行、403=区域封锁，放行时经 `cdn-cgi/trace` 标注出口地区）、`api.anthropic.com`（405/400/401 等业务错误=放行、403=封锁）、`api.perplexity.ai`（401 等业务错误=放行、403=封锁）；API 网络不可达时回退网页探测。
+
 ### IP 质量列（标准测试模式）
 
 | 显示 | 含义 |
@@ -265,10 +267,11 @@ python core/speed_test.py https://你的订阅链接 --full   # 完整报告
 - 页脚第 1 行：延迟术语说明（quick 模式为 `快速模式（并行近似测速）`）
 - 页脚第 2 行：`节点: 26/33 可达 | 平均延迟: 234ms`（有 UDP 节点时追加 `UDP节点: 4 个(经HTTP实测)`）；`可达` = 直连成功 + 隧道探测成功之和 / 节点总数；`平均延迟` = 直连 TCP 成功节点的平均延迟
 - 页脚第 3 行：`测试时间: YYYY-MM-DD HH:MM:SS (时区) | 本次实测下载 X`（左）、`Powered by speed_test.py vX.Y.Z`（右）
+- 订阅分组条（v4.33.0）：选中 ≥2 份订阅时，报告按订阅分组绘制——每组上方一条 `订阅 N（M 节点）` 通栏横条（#E4E4E4），组间以横条分隔；组序=订阅顺序，组内按所选排序；序号跨组连续
 
 ## 排序方式
 
-直接回车 = 最大速度降序。可选：最大/平均速度升序或降序、节点名 A→Z / Z→A、订阅原始顺序。
+直接回车 = 订阅顺序（v4.33.0 起为默认；选中多份订阅时报告按订阅分组绘制，组内按所选排序）。可选：最大/平均速度升序或降序、节点名 A→Z / Z→A。
 
 ## JSON 数据说明
 

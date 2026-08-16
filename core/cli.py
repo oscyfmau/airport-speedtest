@@ -214,20 +214,20 @@ def _invalid_choice(choice: str) -> None:
 
 
 def _menu_choose_sort() -> str:
-    """排序方式选择（测速类入口共用），返回 sort_by"""
+    """排序方式选择（测速类入口共用），返回 sort_by；v4.33.0 默认改为订阅顺序"""
     print("\n排序方式：")
-    print("  1. 订阅顺序")
-    print("  2. 最大速度 降序 ⬅ 默认")
+    print("  1. 订阅顺序（默认）")
+    print("  2. 最大速度 降序")
     print("  3. 最大速度 升序")
     print("  4. 平均速度 降序")
     print("  5. 平均速度 升序")
     print("  6. 节点名 A→Z")
     print("  7. 节点名 Z→A")
-    sort_choice = input("请选择 [1-7] (默认2): ").strip()
+    sort_choice = input("请选择 [1-7] (默认1): ").strip()
     sort_map = {"1": "none", "2": "max_desc", "3": "max_asc",
                 "4": "avg_desc", "5": "avg_asc",
                 "6": "name_asc", "7": "name_desc"}
-    return sort_map.get(sort_choice, "max_desc")
+    return sort_map.get(sort_choice, "none")
 
 
 async def _menu_run_flow(mode: str, fast: bool = False, node_filter: str = "",

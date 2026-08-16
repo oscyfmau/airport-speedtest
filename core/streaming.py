@@ -195,51 +195,135 @@ async def check_disney(session: aiohttp.ClientSession, proxy: str) -> str:
 
 
 async def check_chatgpt(session: aiohttp.ClientSession, proxy: str) -> str:
-    """检测 ChatGPT（多端点探测）"""
+    """检测 ChatGPT（v4.33.0 重写：api.openai.com 区域判别为主，网页探测链兜底）
+
+    背景（2026-08 实测，用户订阅 2 份 12 节点）：chatgpt.com / chat.openai.com /
+    ios.chat.openai.com 对数据中心 IP + 非浏览器 TLS 一律返回 CF 403（挑战页或
+    {"type":"dc"} 风控 JSON），无法区分"区域封锁"与"机器人风控"，导致 HK/TW/SG/JP/US
+    等支持区域的节点被误报为"封锁"。
+    api.openai.com 无此风控：无效 key → 401 invalid_request_error = 区域放行；
+    不支持的国家 → 403 且 body 含 unsupported_country = 区域封锁。
+    """
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     try:
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        async with session.get(
+                "https://api.openai.com/v1/models", proxy=proxy,
+                headers={**headers, "Authorization": "Bearer x"},
+                timeout=aiohttp.ClientTimeout(total=8),
+                allow_redirects=False) as r:
+            if r.status == 401:
+                # 区域放行（占位 key 必然 401）：经 CF trace 取出口地区（该端点不受风控影响）
+                region = ""
+                try:
+                    async with session.get(
+                            "https://chat.openai.com/cdn-cgi/trace", proxy=proxy,
+                            headers=headers, timeout=aiohttp.ClientTimeout(total=8),
+                            allow_redirects=True) as t2:
+                        for line in (await t2.text()).splitlines():
+                            if line.startswith("loc="):
+                                region = line[4:].strip()
+                                break
+                except Exception:
+                    pass
+                return f"解锁({region})" if region else "解锁"
+            if r.status == 403:
+                # 不支持的国家/地区（OpenAI 以 403 unsupported_country 拒绝整个区域）
+                return "封锁"
+            # 其他状态（429/5xx 等）：落回旧网页探测链
+    except Exception:
+        pass
 
-        async def _probe(url: str) -> tuple[int, str]:
-            """探测一个端点，返回 (status, text)"""
-            try:
-                async with session.get(url, proxy=proxy, headers=headers,
-                    timeout=aiohttp.ClientTimeout(total=8),
-                    allow_redirects=True) as r:
-                    t = await r.text()
-                    return r.status, t
-            except Exception:
-                return 0, ""
+    # ---- 旧网页探测链（保留：api.openai.com 网络不可达时的兜底） ----
 
-        # 优先探测 chatgpt.com 主站
-        status1, _ = await _probe("https://chatgpt.com/")
-        if status1 == 200:
-            return "解锁"
+    async def _probe(url: str) -> tuple[int, str]:
+        """探测一个端点，返回 (status, text)"""
+        try:
+            async with session.get(url, proxy=proxy, headers=headers,
+                timeout=aiohttp.ClientTimeout(total=8),
+                allow_redirects=True) as r:
+                t = await r.text()
+                return r.status, t
+        except Exception:
+            return 0, ""
 
-        # 再试 chat.openai.com favicon
-        status2, _ = await _probe("https://chat.openai.com/favicon.ico")
-        if status2 == 200:
-            return "解锁"
+    # 优先探测 chatgpt.com 主站
+    status1, _ = await _probe("https://chatgpt.com/")
+    if status1 == 200:
+        return "解锁"
 
-        # 试 cdn-cgi/trace 提取地区
-        _, trace = await _probe("https://chat.openai.com/cdn-cgi/trace")
-        region = ""
-        for line in trace.splitlines():
-            if line.startswith("loc="):
-                region = line[4:].strip()
-                break
+    # 再试 chat.openai.com favicon
+    status2, _ = await _probe("https://chat.openai.com/favicon.ico")
+    if status2 == 200:
+        return "解锁"
 
-        # favicon 403：CF 拦截（地区封锁/风控）——v4.27.0 修复：
-        # 旧逻辑"403 + trace 有 loc → 解锁(region)"会把被封地区误报为解锁
-        # （cdn-cgi/trace 的 loc 只是 CF 边缘对出口 IP 的地理定位，不代表 OpenAI 放行）
-        if status2 == 403:
-            return "封锁"
-        # trace 有地区 → 能通
-        if region:
-            return f"解锁({region})"
-        # 全部失败
-        return "错误(连接失败)"
-    except Exception as e:
-        return f"错误({type(e).__name__})"
+    # 试 cdn-cgi/trace 提取地区
+    _, trace = await _probe("https://chat.openai.com/cdn-cgi/trace")
+    region = ""
+    for line in trace.splitlines():
+        if line.startswith("loc="):
+            region = line[4:].strip()
+            break
+
+    # favicon 403：CF 拦截（地区封锁/风控）——v4.27.0 修复：
+    # 旧逻辑"403 + trace 有 loc → 解锁(region)"会把被封地区误报为解锁
+    # （cdn-cgi/trace 的 loc 只是 CF 边缘对出口 IP 的地理定位，不代表 OpenAI 放行）
+    if status2 == 403:
+        return "封锁"
+    # trace 有地区 → 能通
+    if region:
+        return f"解锁({region})"
+    # 全部失败
+    return "错误(连接失败)"
+
+
+async def check_claude(session: aiohttp.ClientSession, proxy: str) -> str:
+    """检测 Claude（v4.33.0 新增专用检测器）
+
+    背景（2026-08 实测）：claude.ai 网页对数据中心 IP + 非浏览器 TLS 返回 CF 403
+    挑战页（Just a moment...），支持区域的节点被误报"封锁"。
+    api.anthropic.com 无此风控：区域放行 → 405/400/401 等 API 业务错误（已到达 API）；
+    不支持区域 → 403 CF 拦截页。403 → 封锁；其余任何已到达状态 → 可用。
+    """
+    try:
+        async with session.get(
+                "https://api.anthropic.com/v1/messages", proxy=proxy,
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                         "x-api-key": "x", "anthropic-version": "2023-06-01"},
+                timeout=aiohttp.ClientTimeout(total=8),
+                allow_redirects=False) as r:
+            if r.status == 403:
+                return "封锁"
+            return "可用"  # 已到达 Anthropic API = 区域放行（405/400/401/429/5xx 等）
+    except Exception:
+        pass
+    # 兜底：旧通用网页探测
+    return await check_generic(session, proxy, "https://claude.ai", "Claude")
+
+
+async def check_perplexity(session: aiohttp.ClientSession, proxy: str) -> str:
+    """检测 Perplexity（v4.33.0 新增专用检测器）
+
+    背景（2026-08 实测）：www.perplexity.ai 网页对数据中心 IP + 非浏览器 TLS 返回
+    CF 403 挑战页，支持区域的节点被误报"封锁"。
+    api.perplexity.ai 无此风控：区域放行 → 401 invalid api key 等业务错误（已到达 API）；
+    不支持区域 → 403 CF 拦截页。403 → 封锁；其余任何已到达状态 → 可用。
+    """
+    try:
+        async with session.post(
+                "https://api.perplexity.ai/chat/completions", proxy=proxy,
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                         "Authorization": "Bearer x",
+                         "Content-Type": "application/json"},
+                data="{}",
+                timeout=aiohttp.ClientTimeout(total=8),
+                allow_redirects=False) as r:
+            if r.status == 403:
+                return "封锁"
+            return "可用"  # 已到达 Perplexity API = 区域放行（401/400/429/5xx 等）
+    except Exception:
+        pass
+    # 兜底：旧通用网页探测
+    return await check_generic(session, proxy, "https://www.perplexity.ai", "Perplexity")
 
 
 async def check_generic(session: aiohttp.ClientSession, proxy: str, url: str, name: str) -> str:
@@ -493,6 +577,8 @@ STREAMING_CHECKERS = {
     "netflix": check_netflix,
     "disney": check_disney,
     "chatgpt": check_chatgpt,
+    "claude": check_claude,        # v4.33.0：api.anthropic.com 区域判别（网页被 CF 风控误杀）
+    "perplexity": check_perplexity,  # v4.33.0：api.perplexity.ai 区域判别（同上）
     "bilibili": check_bilibili,
     "bilibili_tw": check_bilibili_tw,
     "tiktok": check_tiktok,
@@ -624,4 +710,4 @@ async def run_streaming_test(mihomo: MihomoEngine, nodes: list[ProxyNode],
             pass
         pbar.close()
 
-__all__ = ['check_youtube', '_extract_yt_region', 'check_netflix', 'check_disney', 'check_chatgpt', 'check_generic', 'check_bilibili', 'BILI_TW_EP_IDS', 'check_bilibili_tw', 'check_tiktok', 'check_spotify', 'check_steam', 'check_primevideo', 'check_max', 'STREAMING_CHECKERS', 'check_one_node_streaming', '_log_streaming_details', 'run_streaming_test']
+__all__ = ['check_youtube', '_extract_yt_region', 'check_netflix', 'check_disney', 'check_chatgpt', 'check_claude', 'check_perplexity', 'check_generic', 'check_bilibili', 'BILI_TW_EP_IDS', 'check_bilibili_tw', 'check_tiktok', 'check_spotify', 'check_steam', 'check_primevideo', 'check_max', 'STREAMING_CHECKERS', 'check_one_node_streaming', '_log_streaming_details', 'run_streaming_test']

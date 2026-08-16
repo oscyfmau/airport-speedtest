@@ -9,7 +9,7 @@ Pull all nodes from an airport subscription, test latency, speed, streaming unlo
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Downloads](https://img.shields.io/github/downloads/oscyfmau/airport-speedtest/total?style=flat-square)](https://github.com/oscyfmau/airport-speedtest/releases)
 
-Version: v4.32.0 | Repository: [github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) | [Changelog](CHANGELOG.md)
+Version: v4.33.0 | Repository: [github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) | [Changelog](CHANGELOG.md)
 
 > This project was written by AI and developed for personal needs — take it as-is.
 
@@ -21,7 +21,7 @@ Version: v4.32.0 | Repository: [github.com/oscyfmau/airport-speedtest](https://g
 
 ## Quick Start (3 Steps, No Command Line Skills Needed)
 
-1. **Download**: open the [Releases page](https://github.com/oscyfmau/airport-speedtest/releases), download the latest `airport-speedtest-v4.32.0.zip` (a slim package with everything needed to run), unzip it, then read `使用教程.txt` inside first (if you know git you can also `git clone`)
+1. **Download**: open the [Releases page](https://github.com/oscyfmau/airport-speedtest/releases), download the latest `airport-speedtest-v4.33.0.zip` (a slim package with everything needed to run), unzip it, then read `使用教程.txt` inside first (if you know git you can also `git clone`)
 2. **Fill in the subscription**: in the unzipped folder, copy `代理.txt.example`, rename it to `代理.txt`, open it with Notepad, paste your subscription link and save
    - What is a subscription link? A URL provided by your airport service provider (usually starts with `https://` and contains all node info); get it from the "Copy subscription" option on the airport website or in the client app
 3. **Run**:
@@ -65,7 +65,7 @@ The mihomo core downloads automatically on first run to `bin/` (about 47MB) — 
 
 Either of the two ways:
 
-- No git: go to the [Releases page](https://github.com/oscyfmau/airport-speedtest/releases), download the latest `airport-speedtest-v4.32.0.zip` (slim package, run core files only) and unzip it; download `Source code (zip)` instead only if you want to modify the code
+- No git: go to the [Releases page](https://github.com/oscyfmau/airport-speedtest/releases), download the latest `airport-speedtest-v4.33.0.zip` (slim package, run core files only) and unzip it; download `Source code (zip)` instead only if you want to modify the code
 - With git:
 
 ```bash
@@ -212,7 +212,7 @@ The report colors follow intuition (green = fast/good, red = slow/bad). All text
 | `Speed too low` | Cumulative download in the first 3 seconds below 64KB; judged too slow and terminated early |
 | `Download failed` | Total download in the 8s window below 256KB (connection failure or block page) |
 | `--` | No data (node never entered the speed test queue, or all download sources failed) |
-| Per-second speed bar chart | Always 7 bars (any sampling length is resampled to 7 points); bar height = in-row min-max normalization (shape only), bar color = absolute speed (red = slow → green = fast, same ramp as the speed cells, comparable across rows), 1px white gaps between bars, no gray background; nodes without per-second data show 7 short bars of equal height |
+| Per-second speed bar chart | Always 7 bars (any sampling length is resampled to 7 points); bar height = in-row min-max normalization (shape only), bar color = absolute speed (red = slow → green = fast, same ramp as the speed cells, comparable across rows), 1px white gaps between bars, no gray background; nodes without per-second data show 7 short bars of equal height; also drawn in quick mode (since v4.33.0) |
 
 ### HTTP Status Codes (numbers in parentheses in the streaming column)
 
@@ -242,6 +242,8 @@ The report colors follow intuition (green = fast/good, red = slow/bad). All text
 | `错误(连接失败)` — Error (connection failed) | Request could not establish a connection (node may be unreachable or timed out) |
 | `跳过(节点不可达)` — Skipped (node unreachable) | First 3 services all failed to connect for this node; judged as a dead node, remaining services not actually tested |
 
+OpenAI / Claude / Perplexity checks (v4.33.0): the web endpoints of these three apply Cloudflare bot protection to datacenter IPs with non-browser clients (supported-region nodes got false 403 "blocked"), so the API endpoints are used instead — `api.openai.com` (invalid key → 401 = region allowed, 403 = region blocked; when allowed the exit region is labeled via `cdn-cgi/trace`), `api.anthropic.com` (405/400/401 business errors = allowed, 403 = blocked), `api.perplexity.ai` (401 etc. = allowed, 403 = blocked); falls back to the web probes when the API is unreachable.
+
 ### IP Quality Column (standard test mode)
 
 | Display | Meaning |
@@ -265,10 +267,11 @@ The report colors follow intuition (green = fast/good, red = slow/bad). All text
 - Footer line 1: latency terminology note (in quick mode: `Quick mode (parallel approximate speed test)`)
 - Footer line 2: `Nodes: 26/33 reachable | Avg latency: 234ms` (plus `UDP nodes: 4 (verified via HTTP)` when UDP nodes exist); `reachable` = direct-connect successes + tunnel-probe successes / total nodes; `Average latency` = average latency of nodes with successful direct TCP
 - Footer line 3: `Test time: YYYY-MM-DD HH:MM:SS (timezone) | Downloaded X this run` (left), `Powered by speed_test.py vX.Y.Z` (right)
+- Subscription group bands (v4.33.0): when ≥2 subscriptions are selected, the report is drawn grouped by subscription — a full-width `Subscription N (M nodes)` band (#E4E4E4) above each group separates them; group order = subscription order, within-group order = the chosen sort; row numbers stay continuous across groups
 
 ## Sorting
 
-Pressing Enter directly = maximum speed descending. Options: maximum/average speed ascending or descending, node name A→Z / Z→A, original subscription order.
+Pressing Enter directly = subscription order (default since v4.33.0; when multiple subscriptions are selected the report is drawn grouped by subscription, each group sorted by the chosen order). Options: maximum/average speed ascending or descending, node name A→Z / Z→A.
 
 ## JSON Data
 

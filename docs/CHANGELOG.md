@@ -8,6 +8,26 @@
 
 ---
 
+## v4.33.0
+
+### 新增
+- **多订阅分组绘制**（`generate_report_image`）：结果含 ≥2 个非空 `sub_index` 时按订阅分组，每组上方 26px 通栏横条 `订阅 N（M 节点）`（#E4E4E4 黑字 12px）；组序=订阅顺序，组内按所选排序，序号跨组连续；sub_index=None 节点殿后显示"未知订阅"；组条计入表高、网格线贯通
+- **AI 流媒体专用检测器**：`check_claude`（`https://api.anthropic.com/v1/messages` GET，403=封锁、其余已到达=可用，兜底 claude.ai 通用探测）、`check_perplexity`（`https://api.perplexity.ai/chat/completions` POST 空 body + 占位 key，403=封锁、其余已到达=可用，兜底 perplexity.ai 通用探测），注册进 `STREAMING_CHECKERS`
+- quick 报告补回每秒速度柱（`speed_bar` 100px；柱高仅表行内起伏、柱色按绝对速度）
+
+### 修改
+- **默认排序改为订阅顺序**：`sort_results` 的 "default" 与 "none" 同义（保持订阅原始顺序）；菜单 `_menu_choose_sort` 选项1=订阅顺序⬅默认、回车默认值改 "none"；报告页眉"排序"标签 default/none → 订阅顺序
+- `check_chatgpt` 重写：主判别改 `https://api.openai.com/v1/models`（占位 Bearer key；401=区域放行并经 `chat.openai.com/cdn-cgi/trace` 标注出口地区、403=区域封锁、其他状态回退）；旧网页探测链保留为兜底（api.openai.com 网络不可达时）
+- **全表字体统一常规不加粗**：数值格/页眉标题弃用 `_font_bd`（函数保留）；数值列自适应余量 +14 → +20（左右各 10px）
+- quick 列布局加 `("speed_bar","每秒速度",100,"c")`（has_spd 时）
+
+### 修复
+- OpenAI/Claude/Perplexity 检测误报：三平台网页端点对数据中心 IP + 非浏览器 TLS 有 Cloudflare 机器人风控（2026-08-16 实测：HK/TW/SG/JP/US 出口 12 节点全部 403 误报"封锁"，而 api.openai.com 全返 401 无效 key、api.anthropic.com 全返 405、api.perplexity.ai 全返 401 无效 key=区域放行），改用 API 端点判别后实测输出 解锁(TW/SG/JP/US)/可用；某 HK 节点 api.openai.com 真 403 如实标"封锁"
+- 数字列文字贴边余量不足（数值列 +14 改为 +20）
+
+### 移除
+- （无；旧网页探测链与 `_font_bd` 保留为兜底/接口）
+
 ## v4.32.0
 
 ### 新增
