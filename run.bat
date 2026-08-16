@@ -36,6 +36,14 @@ if errorlevel 1 (
     echo [OK] 依赖安装完成
 )
 
+:: 可选依赖（v4.36.0：cloudscraper 反爬回退 / yt-dlp 油管测速源，缺失不影响核心功能）
+%PY% -c "import cloudscraper, yt_dlp" >nul 2>&1
+if errorlevel 1 (
+    echo [信息] 安装可选依赖（cloudscraper/yt-dlp）...
+    %PY% -m pip install -r "core\requirements-optional.txt" >nul 2>&1
+    if errorlevel 1 echo [信息] 可选依赖安装失败（不影响核心功能，可稍后手动安装）
+)
+
 %PY% "core\speed_test.py" %*
 if errorlevel 1 pause
 goto :eof

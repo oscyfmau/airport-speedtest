@@ -8,6 +8,28 @@
 
 ---
 
+## v4.36.0
+
+### 新增
+- `core/requirements-optional.txt`：可选依赖清单（cloudscraper==1.2.71 / yt-dlp==2026.7.4）；run.bat 首次运行自动尝试安装，失败仅提示不阻断（缺失时代码侧照常回退 requests / 禁用油管源）
+
+### 修改
+- `core/requirements.txt` 核心 5 依赖精确锁版：aiohttp==3.12.14、PyYAML==6.0.2、Pillow==11.3.0、tqdm==4.67.1、requests==2.32.5（此前全部 `>=` 浮动）
+- `read_subscribe_urls` 与 cli `-i` 分支统一改"先读字节 → 依次尝试 utf-8-sig → gbk 解码"（parser/cli）
+- `_finish_partial` 增加 `reason` 参数（5 个调用点传入 `no_reachable_nodes`/`mihomo_missing`；不再一律硬编码 "interrupted"）
+- run_test 用户中断路径的 `run_end` 改记 `completed=False` + `reason="interrupted"`；正常完成路径补 `reason="completed"`
+- `sort_results` 未知排序方式回退订阅顺序并 WARNING（此前静默回退最大速度降序）
+- `_fmt_ms` 增加 NaN/Inf/负值/非数值守卫（异常输入显示 `--`）；`print_console_summary` 数值列增加 isfinite 守卫；`_fmt_mb` 标注为保留接口
+- `pack_release.py` `CORE_INCLUDE` 收录 `requirements-optional.txt`；教程文本补可选依赖说明
+
+### 修复
+- GBK 编码订阅文件：旧实现 UTF-8 读到一半失败后 GBK 重读并再次 append，同一 URL 重复（浪费拉取流量且 sub_index 错位）
+- cli `-i` 的 GBK 回退是死代码：`try` 只包 `open()` 不包迭代，`UnicodeDecodeError` 在 `for line` 时未捕获崩溃
+- 报告 `_fmt_ms` 对 NaN 显示 "nanms"、负延迟被色块误判为快；控制台小结 NaN 数值列显示 "nan"
+
+### 移除
+- （无）
+
 ## v4.35.0
 
 ### 新增

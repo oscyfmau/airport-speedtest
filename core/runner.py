@@ -26,11 +26,15 @@ from .utils import *
 from .webpage import *
 
 def _finish_partial(results_dict: dict, mode: str, display_mode: str,
-                    t_start: float, sort_by: str) -> str:
-    """提前结束路径共用：生成 PNG + JSON 并记录路径"""
+                    t_start: float, sort_by: str, reason: str = "interrupted") -> str:
+    """提前结束路径共用：生成 PNG + JSON 并记录路径
+
+    v4.36.0：reason 由调用点传入（此前一律硬编码 "interrupted"，与
+    "无可达节点/mihomo 缺失" 等提前结束场景不符）
+    """
     logger.warning(
         "提前结束，生成部分报告",
-        extra=_ev("run_end", {"completed": False, "partial": True, "reason": "interrupted",
+        extra=_ev("run_end", {"completed": False, "partial": True, "reason": reason,
                               "nodes": len(results_dict)}))
     _mark_reuse(list(results_dict.values()))  # 复用检测四档（无 IP 数据时空转）
     report_ts = _new_report_timestamp()  # v4.29.0：PNG/JSON 共享时间戳（毫秒防同秒覆盖）
@@ -449,6 +453,7 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
     mihomo = MihomoEngine()  # 提前创建：隧道探测与测速阶段共用内核
     pool = None
     used_pool = False
+    interrupted = False  # v4.36.0：用户中断标记（中断路径的 run_end 记 completed=False）
     try:
         if mode == "quick":
             # v4.30.0 快速检测：TCP 1 次重试筛活 → 死节点如实标注 → 并行一条龙 → 回退串行
@@ -481,10 +486,12 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
             quick_alive = [n for n in nodes if n.name not in quick_dead]
             if not quick_alive:
                 logger.error("无可用的节点，跳过后续测试")
-                return _finish_partial(results_dict, mode, output_mode, t_start, sort_by)
+                return _finish_partial(results_dict, mode, output_mode, t_start, sort_by,
+                                       reason="no_reachable_nodes")
             if not (mihomo.binary_path and os.path.isfile(mihomo.binary_path)):
                 logger.error("mihomo 不可用，跳过快速检测")
-                return _finish_partial(results_dict, mode, output_mode, t_start, sort_by)
+                return _finish_partial(results_dict, mode, output_mode, t_start, sort_by,
+                                       reason="mihomo_missing")
             if QUICK_WORKERS > 1:
                 pool = MihomoWorkerPool(mihomo.binary_path, QUICK_WORKERS)
                 if await pool.start():
@@ -552,7 +559,8 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
 
         if mode not in ("streaming", "quick") and not active_speed:
             logger.error("无可用的节点，跳过后续测试")
-            return _finish_partial(results_dict, mode, output_mode, t_start, sort_by)
+            return _finish_partial(results_dict, mode, output_mode, t_start, sort_by,
+                                   reason="no_reachable_nodes")
 
         if mode != "quick":
             logger.info("启动 mihomo 引擎...")
@@ -560,7 +568,8 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
             binary_ok = bool(mihomo.binary_path and os.path.isfile(mihomo.binary_path))
             if not binary_ok:
                 logger.error("mihomo 不可用，跳过 HTTP 测速及后续测试")
-                return _finish_partial(results_dict, mode, output_mode, t_start, sort_by)
+                return _finish_partial(results_dict, mode, output_mode, t_start, sort_by,
+                                       reason="mihomo_missing")
 
         # 阶段2: HTTP 测速（恒串行：单节点单时刻；节点内部 DOWNLOAD_CONNS 路并发连接）
         if mode not in ("streaming", "quick") and active_speed:
@@ -697,7 +706,8 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
         if (need_stream or need_ip or need_web) and mode != "quick" and not (mihomo.binary_path and os.path.isfile(mihomo.binary_path)):
             # 纯流媒体模式此前无二进制检查（非流媒体模式已在阶段2前拦截）
             logger.error("mihomo 不可用，跳过流媒体/IP/网页检测")
-            return _finish_partial(results_dict, mode, output_mode, t_start, sort_by)
+            return _finish_partial(results_dict, mode, output_mode, t_start, sort_by,
+                                   reason="mihomo_missing")
         if (need_stream or need_ip or need_web) and mode != "quick":
             node_tasks = [(n, need_stream, need_ip, need_web)
                           for n in active_all if n.name not in dead_names]
@@ -733,10 +743,12 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
             step_idx += 1
 
     except KeyboardInterrupt:
+        interrupted = True  # v4.36.0：中断路径 run_end 记 completed=False + reason=interrupted
         logger.warning("用户中断测试，正在生成当前结果...（中断阶段: %s）", phase,
                        extra=_ev("user_interrupt", {"phase": phase}))
     except asyncio.CancelledError:
         # asyncio.run 下 Ctrl+C 以 CancelledError 抛出，吞掉后继续生成部分结果
+        interrupted = True  # v4.36.0：同上
         logger.warning("用户中断测试，正在生成当前结果...（中断阶段: %s）", phase,
                        extra=_ev("user_interrupt", {"phase": phase}))
     except Exception:
@@ -777,16 +789,30 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
         logger.exception("报告图片生成失败，仅导出 JSON 数据")
         img_path = ""
     logger.info("=" * 50)
-    logger.info(
-        "测试完成! 耗时 %.0f 秒，共 %d 个节点", total_time, len(nodes),
-        extra=_ev("run_end", {
-            "completed": True,
-            "total_seconds": round(total_time, 1),
-            "nodes": len(nodes),
-            "mode": output_mode,
-            "report": img_path,
-        }),
-    )
+    if interrupted:
+        logger.warning(
+            "测试中断，已生成部分结果（共 %d 个节点）", len(nodes),
+            extra=_ev("run_end", {
+                "completed": False,
+                "reason": "interrupted",
+                "total_seconds": round(total_time, 1),
+                "nodes": len(nodes),
+                "mode": output_mode,
+                "report": img_path,
+            }),
+        )
+    else:
+        logger.info(
+            "测试完成! 耗时 %.0f 秒，共 %d 个节点", total_time, len(nodes),
+            extra=_ev("run_end", {
+                "completed": True,
+                "reason": "completed",
+                "total_seconds": round(total_time, 1),
+                "nodes": len(nodes),
+                "mode": output_mode,
+                "report": img_path,
+            }),
+        )
     if mode != "streaming":
         direct_ok = sum(1 for r in results_dict.values() if r.tcp_ping is not None)
         probe_only = sum(1 for r in results_dict.values() if r.tcp_ping is None and r.tcp_probe)

@@ -85,10 +85,19 @@ def _bar_color_rel(t: float) -> tuple:
 
 
 def _fmt_ms(ms):
-    return "超时" if ms is None else f"{ms:.0f}ms"
+    """格式化延迟（v4.36.0：NaN/Inf/负值守卫——此前 NaN 显示 "nanms"、负延迟会被色块误判为快）"""
+    if ms is None:
+        return "超时"
+    try:
+        if not math.isfinite(ms) or ms < 0:
+            return "--"
+    except (TypeError, ValueError):
+        return "--"
+    return f"{ms:.0f}ms"
 
 
 def _fmt_mb(s):
+    """旧接口保留（v4.32.0 起报告改走 `_fmt_speed`，本函数不再被调用）"""
     return "--" if s is None else f"{s:.1f}MB/s"
 
 
@@ -377,7 +386,9 @@ def sort_results(results, sort_by):
         return sorted(results, key=lambda r: r.node.name)
     if sort_by == "name_desc":
         return sorted(results, key=lambda r: r.node.name, reverse=True)
-    return sorted(results, key=lambda r: (r.max_speed is None, r.speed is None, -(r.max_speed or r.speed or 0)))
+    # v4.36.0：未知排序方式回退订阅顺序并告警（此前静默回退最大速度降序，与默认语义矛盾）
+    logger.warning("未知排序方式 %r，回退订阅顺序", sort_by)
+    return list(results)
 
 
 def print_console_summary(results, sort_by="default", top: int = 5) -> None:
@@ -402,13 +413,14 @@ def print_console_summary(results, sort_by="default", top: int = 5) -> None:
         name = _trunc_width(_flag_to_text(r.node.name), 30)
         if is_udp_node(r.node):
             ping = "UDP"
-        elif r.tcp_ping is not None:
+        elif r.tcp_ping is not None and math.isfinite(r.tcp_ping) and r.tcp_ping >= 0:
             ping = f"{r.tcp_ping:.0f}ms"
         else:
             ping = "--"
-        http = f"{r.http_latency:.0f}ms" if r.http_latency is not None else "--"
-        avg = f"{r.speed:.1f}MB/s" if r.speed else "--"
-        mx = f"{r.max_speed:.1f}MB/s" if r.max_speed else "--"
+        http = (f"{r.http_latency:.0f}ms" if r.http_latency is not None
+                and math.isfinite(r.http_latency) and r.http_latency >= 0 else "--")
+        avg = f"{r.speed:.1f}MB/s" if r.speed and math.isfinite(r.speed) else "--"
+        mx = f"{r.max_speed:.1f}MB/s" if r.max_speed and math.isfinite(r.max_speed) else "--"
         line = (f"{_pad_right(name, 30)} {_pad_right(ping, 7)} {_pad_right(http, 7)} "
                 f"{_pad_right(avg, 10)} {_pad_right(mx, 10)}")
         if has_stream:

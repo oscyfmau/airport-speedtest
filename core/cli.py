@@ -854,16 +854,27 @@ async def async_main():
                 filepath = args[i + 1]
                 if os.path.exists(filepath):
                     url_list = []
-                    # utf-8-sig 兼容 BOM；GBK 失败时回退
+                    # v4.36.0：先读字节再依次尝试 utf-8-sig → gbk——旧实现 try 只包 open()
+                    # 不包迭代，UnicodeDecodeError 在 for line 时抛出，回退分支是死代码，
+                    # GBK 文件会在迭代时未捕获崩溃
                     try:
-                        fh = open(filepath, "r", encoding="utf-8-sig")
-                    except UnicodeDecodeError:
-                        fh = open(filepath, "r", encoding="gbk", errors="replace")
-                    with fh:
-                        for line in fh:
-                            l = line.strip()
-                            if l and not l.startswith("#"):
-                                url_list.append(l)
+                        raw = open(filepath, "rb").read()
+                    except OSError as e:
+                        logger.error("读取文件失败: %s", _safe_exc_str(e))
+                        raw = b""
+                    text = None
+                    for enc in ("utf-8-sig", "gbk"):
+                        try:
+                            text = raw.decode(enc)
+                            break
+                        except UnicodeDecodeError:
+                            continue
+                    if text is None:
+                        text = raw.decode("utf-8", errors="replace")
+                    for line in text.splitlines():
+                        l = line.strip()
+                        if l and not l.startswith("#"):
+                            url_list.append(l)
                     url = url_list  # 支持多 URL 合并解析
                 else:
                     logger.error("文件不存在: %s", filepath)

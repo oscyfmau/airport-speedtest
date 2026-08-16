@@ -1,0 +1,6 @@
+# 可选依赖（v4.36.0 起从 requirements.txt 拆出）：
+#   cloudscraper — 订阅拉取反爬回退（缺失时自动回退 requests）
+#   yt-dlp       — 油管直链解析（YOUTUBE_SOURCE_ENABLED=True 时第 4 测速源）
+# 缺失不影响核心功能，run.bat 会在首次运行时尝试安装
+cloudscraper==1.2.71
+yt-dlp==2026.7.4

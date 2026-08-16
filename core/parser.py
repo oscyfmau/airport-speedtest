@@ -891,22 +891,31 @@ def parse_node_uri(line: str) -> Optional[ProxyNode]:
 
 
 def read_subscribe_urls() -> list[str]:
-    """从默认文件读取订阅 URL"""
-    urls = []
-    if os.path.exists(SUBSCRIBE_FILE):
-        # utf-8-sig：兼容 UTF-8 BOM（首行 URL 带 \ufeff 会解析失败）；GBK 失败时回退
+    """从默认文件读取订阅 URL
+
+    v4.36.0：先整体读字节，再依次尝试 utf-8-sig → gbk 解码——修复旧实现"UTF-8
+    读到一半失败 → 已追加的 ASCII 行在 GBK 重读后重复追加"的脏数据 bug。
+    """
+    if not os.path.exists(SUBSCRIBE_FILE):
+        return []
+    try:
+        raw = open(SUBSCRIBE_FILE, "rb").read()
+    except OSError:
+        return []
+    text = None
+    for enc in ("utf-8-sig", "gbk"):
         try:
-            with open(SUBSCRIBE_FILE, "r", encoding="utf-8-sig") as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith("#"):
-                        urls.append(line)
+            text = raw.decode(enc)
+            break
         except UnicodeDecodeError:
-            with open(SUBSCRIBE_FILE, "r", encoding="gbk", errors="replace") as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith("#"):
-                        urls.append(line)
+            continue
+    if text is None:
+        text = raw.decode("utf-8", errors="replace")  # 双编码均失败（极少）：replace 兜底
+    urls = []
+    for line in text.splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            urls.append(line)
     return urls
 
 __all__ = ['_parse_userinfo', '_YtDlpNullLogger', 'resolve_youtube_download_url', 'parse_vmess', '_parse_userhost_port', 'parse_vless', 'parse_trojan', 'parse_ss', 'parse_ssr', 'parse_hysteria2', 'parse_hysteria', '_parse_uuid_password', 'parse_tuic', 'parse_anytls', 'parse_wireguard', 'parse_naive', 'parse_shadowtls', 'parse_juicity', 'parse_ssh', 'parse_socks', 'parse_http', 'PARSERS', 'URI_PATTERN', '_looks_like_yaml', 'detect_and_decode', '_try_fetch', 'parse_subscription_url', 'parse_subscription_content', '_dedupe_nodes', 'parse_subscription_urls', '_fetch_sub_usage', 'MIHOMO_SUPPORTED_TYPES', '_is_valid_node', '_yaml_to_node', 'parse_node_uri', 'read_subscribe_urls']
