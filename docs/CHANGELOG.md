@@ -8,6 +8,23 @@
 
 ---
 
+## v4.26.0
+
+### 修改
+- **IP 质量：全局节流防免费源 429 降级**：新增 `ip_quality._TokenBucket` 令牌桶（`config.IP_RATE_LIMIT_PER_MIN = 40`），`check_ip_quality` 每个源请求前 `acquire()`——ip-api.com 免费版限 45 请求/分钟/出口 IP，并行路径（--workers>1）多节点同时打主源会触发 429 并降级到无风控字段的回退源（ipwho.is/api.ip.sb），导致报告 IP 类型/风险列显示 "--"；实测 3 节点 normal 全量走通 ip-api.com 主源（source=ip-api.com，proxy/hosting/mobile 字段齐全）
+- **网页模拟：国际站点全失败回退国内站点**：`check_one_node_webpage` 国际站点（google/youtube/bing/github）全部失败（落地 CN 但 IP 检测失败、或线路屏蔽国际站）时，自动清空并回退用国内站点（baidu/bilibili/qq）再测一轮，网页均耗列不再空白
+
+### 修复
+- （无）
+
+### 新增
+- （无）
+
+### 移除
+- （无）
+
+---
+
 ## v4.25.0
 
 ### 修改

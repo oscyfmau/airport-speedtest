@@ -37,6 +37,10 @@ async def check_one_node_webpage(session: aiohttp.ClientSession, proxy: str,
             results[site] = -1
 
     await asyncio.gather(*[one(s, u) for s, u in urls])
+    # 国际站点全失败（落地 CN 但 IP 检测失败、或线路屏蔽国际站）→ 回退国内站点再测一轮
+    if not any(v > 0 for v in results.values()) and urls != WPS_CN_URLS:
+        results = {}
+        await asyncio.gather(*[one(s, u) for s, u in WPS_CN_URLS])
     ok_vals = [v for v in results.values() if v > 0]
     results["avg_ms"] = round(sum(ok_vals) / len(ok_vals)) if ok_vals else -1
     logger.debug(

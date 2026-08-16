@@ -3,6 +3,7 @@
 """IP 质量检测：多源回退 / 风险评分 / 复用检测"""
 import asyncio
 import re
+import time
 
 import aiohttp
 from tqdm import tqdm
@@ -12,6 +13,35 @@ from .engine import *
 from .logging_setup import *
 from .models import *
 from .utils import *
+
+class _TokenBucket:
+    """IP 源请求全局节流（令牌桶，v4.26.0）：ip-api.com 免费版 45 req/min 限流，
+    并行路径（--workers>1）多节点同时打主源会 429 → 降级到无风控字段的回退源，
+    导致 ip_type/风险列 "--"。按 IP_RATE_LIMIT_PER_MIN 全局限流（留余量），跨 worker 共享。
+    """
+
+    def __init__(self, rate_per_min: int):
+        self._rate = rate_per_min / 60.0
+        self._tokens = float(rate_per_min)
+        self._last = 0.0
+        self._lock = asyncio.Lock()
+
+    async def acquire(self) -> None:
+        async with self._lock:
+            now = time.monotonic()
+            if self._last:
+                self._tokens = min(self._rate, self._tokens + (now - self._last) * self._rate)
+            self._last = now
+            if self._tokens >= 1.0:
+                self._tokens -= 1.0
+                return
+            wait = (1.0 - self._tokens) / self._rate
+            self._tokens = 0.0
+        await asyncio.sleep(wait)
+
+
+_ip_bucket = _TokenBucket(IP_RATE_LIMIT_PER_MIN)
+
 
 def _log_ip_details(node_name: str, ip_info: dict) -> None:
     """JSONL 记录单节点 IP 检测结果"""
@@ -201,6 +231,7 @@ async def check_ip_quality(session: aiohttp.ClientSession, proxy: str) -> dict:
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     last_err = ""
     for url, mapper in IP_SOURCES:
+        await _ip_bucket.acquire()  # 全局节流：防免费源 429 降级
         for attempt in range(2):  # 429/瞬时错误退避重试一次，避免误降级到无风控字段的回退源
             try:
                 async with session.get(
