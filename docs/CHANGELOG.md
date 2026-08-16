@@ -8,6 +8,23 @@
 
 ---
 
+## v4.41.0
+
+### 新增
+- （无）
+
+### 修改
+- `test_node_quick` 外层 except 补 `error_note="测速异常"`（与 `test_node_speed` v4.38.0 口径一致；此前 quick 测速异常时报告速度列空白无说明）
+
+### 修复
+- quick 模式测速异常路径静默（无错误原因标注）
+
+### 移除
+- （无）
+
+### 复核确认（无需改动）
+- `_get_mihomo_version` 的 Popen 已带 `CREATE_NO_WINDOW`（与引擎其余 Popen 一致）
+
 ## v4.40.0
 
 ### 新增

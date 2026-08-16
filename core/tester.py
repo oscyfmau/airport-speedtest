@@ -248,6 +248,9 @@ async def test_node_quick(sess: aiohttp.ClientSession, proxy: str,
             error_note = "下载失败"  # 数据量不足（连接失败/拦截页）
     except Exception as e:
         logger.debug("test_node_quick failed for %s: %s", node.name, _safe_exc_str(e))
+        # v4.41.0：与 test_node_speed 一致，异常路径如实记录错误原因（此前静默返回 None）
+        if error_note is None:
+            error_note = "测速异常"
     return http_latency, speed, max_speed, per_sec, error_note
 
 
