@@ -586,6 +586,121 @@ def run_compare_report(data: dict, run_a_id: str, run_b_id: str) -> dict:
             "only_a": only_a, "only_b": len(only_b)}
 
 
+def subscription_group_report(data: dict, run_id: str = "") -> dict:
+    """订阅分组对比（v4.31.0，二级菜单 3）：按节点 sub_index 分组的横评
+
+    数据源 = 所选 run 的原始 JSON（缺省最近一次）。解锁率口径：
+    实际检测的服务中"解锁/可用"计数 ÷ 检测数（排除"跳过/错误"，坏节点不稀释）。
+    返回 {"run": meta, "rows": [...], "note": 提示}
+    """
+    runs = data.get("runs") or []
+    run = (next((r for r in runs if r["run_id"] == run_id), None) if run_id
+           else (runs[-1] if runs else None))
+    if not run:
+        return {"error": "档案中没有测试记录"}
+    j = _load_run_json(run.get("json_file"))
+    if not j or not j.get("results"):
+        return {"error": "该次测试的原始 JSON 缺失，无法分组（可用节点稳定性视图替代）"}
+    groups = {}
+    for e in j["results"]:
+        k = e.get("sub_index")
+        if k is None:
+            k = "未知"
+        g = groups.setdefault(k, {"n": 0, "speeds": [], "max_speed": 0.0,
+                                  "lats": [], "risks": [],
+                                  "unlock": 0, "unlock_total": 0})
+        g["n"] += 1
+        s = e.get("speed_mbs")
+        if s is not None:
+            g["speeds"].append(s)
+            g["max_speed"] = max(g["max_speed"], e.get("max_speed_mbs") or s)
+        p = e.get("tcp_ping_ms")
+        if p is not None:
+            g["lats"].append(p)
+        risk = (e.get("ip_info") or {}).get("risk_score")
+        if risk is not None:
+            g["risks"].append(risk)
+        vals = [v for v in (e.get("streaming") or {}).values()
+                if isinstance(v, str) and not v.startswith("跳过") and not v.startswith("错误")]
+        g["unlock_total"] += len(vals)
+        g["unlock"] += sum(1 for v in vals if "解锁" in v or "可用" in v)
+    rows = []
+    for k, g in groups.items():
+        rows.append({
+            "group": k,
+            "n": g["n"],
+            "avg_speed": (sum(g["speeds"]) / len(g["speeds"])) if g["speeds"] else None,
+            "max_speed": g["max_speed"] or None,
+            "avg_lat": (sum(g["lats"]) / len(g["lats"])) if g["lats"] else None,
+            "avg_risk": (sum(g["risks"]) / len(g["risks"])) if g["risks"] else None,
+            "unlock": g["unlock"],
+            "unlock_total": g["unlock_total"],
+            "unlock_rate": (g["unlock"] / g["unlock_total"]) if g["unlock_total"] else None,
+        })
+    rows.sort(key=lambda x: (x["avg_speed"] is None, -(x["avg_speed"] or 0)))
+    multi = any(isinstance(k, int) for k in groups) and len(groups) > 1
+    note = ""
+    if len(groups) <= 1:
+        note = "只有 1 个订阅（或旧数据无 sub_index 分组字段）"
+    return {"run": run, "rows": rows, "note": note}
+
+
+def cleanup_outputs(keep_reports: int = KEEP_REPORTS_DEFAULT,
+                    keep_logs_days: int = KEEP_LOGS_DAYS_DEFAULT,
+                    dry_run: bool = False) -> dict:
+    """产物累积清理（v4.31.0）：output/ 保留最近 keep_reports 份 PNG+JSON 配对、
+    log/ 保留最近 keep_logs_days 天。
+
+    护栏：只匹配 测速结果_* / 测速日志_* 前缀、按 basename 成对删、
+    profiles.json 永不参与、单个文件异常跳过不中断。返回统计 dict。
+    """
+    reports_deleted = 0
+    logs_deleted = 0
+    freed = 0
+    try:
+        if os.path.isdir(OUTPUT_DIR):
+            groups = {}
+            for f in os.listdir(OUTPUT_DIR):
+                if f.startswith("测速结果_") and (f.endswith(".png") or f.endswith(".json")):
+                    groups.setdefault(os.path.splitext(f)[0], []).append(f)
+            items = sorted(groups.items(),
+                           key=lambda kv: os.path.getmtime(os.path.join(OUTPUT_DIR, kv[1][0])))
+            victims = items[:-keep_reports] if len(items) > keep_reports else []
+            for base, files in victims:
+                for f in files:
+                    p = os.path.join(OUTPUT_DIR, f)
+                    try:
+                        sz = os.path.getsize(p)
+                        if not dry_run:
+                            os.remove(p)
+                        freed += sz
+                    except OSError:
+                        pass  # 单个文件异常跳过
+                reports_deleted += 1
+    except OSError:
+        pass
+    try:
+        if os.path.isdir(LOG_DIR):
+            cutoff = time.time() - max(1, int(keep_logs_days)) * 86400
+            for f in os.listdir(LOG_DIR):
+                if f.startswith("测速日志_") and f.endswith(".jsonl"):
+                    p = os.path.join(LOG_DIR, f)
+                    try:
+                        if os.path.getmtime(p) < cutoff:
+                            sz = os.path.getsize(p)
+                            if not dry_run:
+                                os.remove(p)
+                            freed += sz
+                            logs_deleted += 1
+                    except OSError:
+                        pass
+    except OSError:
+        pass
+    return {"reports_deleted": reports_deleted, "logs_deleted": logs_deleted,
+            "freed_bytes": freed}
+
+
 __all__ = ['PROFILES_FILE', 'load_profiles', 'save_profiles', 'rebuild_profiles',
            'append_run', 'match_or_create', 'node_stability_report',
-           'run_compare_report', '_is_peak_hour']
+           'run_compare_report', '_is_peak_hour', 'subscription_group_report',
+           'cleanup_outputs']

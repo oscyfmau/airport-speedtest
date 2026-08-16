@@ -413,7 +413,7 @@ def _menu_settings() -> None:
     """设置（旧菜单 12 + v4.29.0 稳定性窗口/大流量确认）"""
     print(_current_settings_line())
     print("操作: 1=测速窗口秒数  2=并行数  3=自动打开报告  4=恢复默认  "
-          "5=稳定性窗口  6=大流量确认  回车=返回")
+          "5=稳定性窗口  6=大流量确认  7=保留报告份数  8=日志保留天数  回车=返回")
     act = input(": ").strip()
     try:
         if act == "1":
@@ -460,6 +460,27 @@ def _menu_settings() -> None:
             st["confirm_large_run"] = v in ("y", "yes")
             save_settings(st)
             print(f"[OK] 大流量确认: {'开' if st['confirm_large_run'] else '关'}")
+        elif act == "7":
+            v = input(f"保留报告份数 (10/30/100，当前 {load_settings()['keep_reports']}): ").strip()
+            if v not in ("10", "30", "100"):
+                print("[错误] 只支持 10/30/100")
+            else:
+                st = load_settings()
+                st["keep_reports"] = int(v)
+                save_settings(st)
+                print(f"[OK] 保留报告份数: {st['keep_reports']}")
+        elif act == "8":
+            v = input(f"日志保留天数 (7-365，当前 {load_settings()['keep_logs_days']}): ").strip()
+            try:
+                days = int(v)
+                if not 7 <= days <= 365:
+                    raise ValueError
+                st = load_settings()
+                st["keep_logs_days"] = days
+                save_settings(st)
+                print(f"[OK] 日志保留天数: {st['keep_logs_days']}")
+            except ValueError:
+                print("[错误] 请输入 7-365 的整数")
     except OSError as e:
         # 设置文件写失败（只读/权限/磁盘）不拖垮菜单
         print(f"[错误] 保存设置失败: {_safe_exc_str(e)}")
@@ -660,6 +681,97 @@ def _menu_compare() -> None:
     input("\n按 Enter 返回菜单...")
 
 
+def _menu_group_report() -> None:
+    """订阅分组对比（二级 3，v4.31.0）：按订阅来源横评（数据=结果 JSON 的 sub_index）"""
+    try:
+        data = load_profiles()
+    except Exception as e:
+        print(f"[错误] 档案读取失败: {_safe_exc_str(e)}")
+        input("\n按 Enter 返回菜单...")
+        return
+    runs = data.get("runs") or []
+    if not runs:
+        print("档案中没有测试记录")
+        input("\n按 Enter 返回菜单...")
+        return
+    metas = list(reversed(runs[-15:]))  # 最新在前
+    print("\n最近测试（回车=用最新一次，输入编号选历史）：")
+    for i, r in enumerate(metas, 1):
+        print(f"  {i:>2}. {r['ts']}  {_pad_right(_MODE_NAMES.get(r['mode'], r['mode']), 8)} "
+              f"{r['node_count']} 节点")
+    try:
+        inp = input("选择: ").strip()
+    except KeyboardInterrupt:
+        return
+    run_id = ""
+    if inp:
+        try:
+            run_id = metas[int(inp) - 1]["run_id"]
+        except (ValueError, IndexError):
+            print("[错误] 编号无效")
+            input("\n按 Enter 返回菜单...")
+            return
+    res = subscription_group_report(data, run_id)
+    if res.get("error"):
+        print(f"[错误] {res['error']}")
+        input("\n按 Enter 返回菜单...")
+        return
+    run = res["run"]
+    print(f"\n订阅分组对比: {run['ts']} ({run['mode']})")
+    if res.get("note"):
+        print(f"[提示] {res['note']}")
+    print(f"{_pad_right('分组', 8)} {'节点数':>6} {'平均速度':>10} {'最高速度':>10} "
+          f"{'解锁率':>8} {'平均延迟':>9} {'风险均值':>8}")
+    print("-" * 68)
+    for row in res["rows"]:
+        avg = f"{row['avg_speed']:.1f}MB/s" if row["avg_speed"] is not None else "--"
+        mx = f"{row['max_speed']:.1f}MB/s" if row["max_speed"] else "--"
+        rate = f"{row['unlock_rate'] * 100:.0f}%" if row["unlock_rate"] is not None else "--"
+        lat = f"{row['avg_lat']:.0f}ms" if row["avg_lat"] is not None else "--"
+        risk = f"{row['avg_risk']:.0f}" if row["avg_risk"] is not None else "--"
+        print(f"{_pad_right(str(row['group']), 8)} {row['n']:>6} {avg:>10} {mx:>10} "
+              f"{rate:>8} {lat:>9} {risk:>8}")
+    input("\n按 Enter 返回菜单...")
+
+
+def _menu_cleanup() -> None:
+    """清理旧报告与日志（维护 3，v4.31.0）：先统计后确认执行"""
+    st = load_settings()
+    keep_r = st.get("keep_reports", KEEP_REPORTS_DEFAULT)
+    keep_d = st.get("keep_logs_days", KEEP_LOGS_DAYS_DEFAULT)
+    try:
+        stat = cleanup_outputs(keep_r, keep_d, dry_run=True)
+    except Exception as e:
+        print(f"[错误] 统计失败: {_safe_exc_str(e)}")
+        input("\n按 Enter 返回菜单...")
+        return
+    total = _fmt_size(stat["freed_bytes"])
+    print(f"\n产物清理（保留最近 {keep_r} 份报告 / 最近 {keep_d} 天日志；可在设置页调整）：")
+    print(f"  将删除: 报告 {stat['reports_deleted']} 份、日志 {stat['logs_deleted']} 个，"
+          f"释放约 {total}")
+    if not stat["reports_deleted"] and not stat["logs_deleted"]:
+        print("  当前无需清理")
+        input("\n按 Enter 返回菜单...")
+        return
+    try:
+        act = input("确认执行清理？[y/N]: ").strip().lower()
+    except KeyboardInterrupt:
+        return
+    if act in ("y", "yes"):
+        try:
+            done = cleanup_outputs(keep_r, keep_d)
+        except Exception as e:
+            print(f"[错误] 清理失败: {_safe_exc_str(e)}")
+            input("\n按 Enter 返回菜单...")
+            return
+        logger.info("手动产物清理: 报告 -%d 份、日志 -%d 个",
+                    done["reports_deleted"], done["logs_deleted"],
+                    extra=_ev("profiles_cleanup", done))
+        print(f"[OK] 已清理: 报告 {done['reports_deleted']} 份、日志 {done['logs_deleted']} 个，"
+              f"释放 {_fmt_size(done['freed_bytes'])}")
+    input("\n按 Enter 返回菜单...")
+
+
 async def async_main():
     """异步主入口"""
     # 检查参数
@@ -809,8 +921,7 @@ async def async_main():
             elif choice == "2":
                 _menu_compare()  # v4.30.0：结果对比
             elif choice == "3":
-                print("订阅分组对比 开发中（v4.31 上线）")
-                input("\n按 Enter 返回菜单...")
+                _menu_group_report()  # v4.31.0：订阅分组对比
             elif choice == "4":
                 last_result_path = await _menu_filtered_run()
             elif choice == "5":
@@ -835,8 +946,7 @@ async def async_main():
             elif choice == "2":
                 _menu_env_info()
             elif choice == "3":
-                print("清理旧报告与日志 开发中（v4.31 上线）")
-                input("\n按 Enter 返回菜单...")
+                _menu_cleanup()  # v4.31.0：清理旧报告与日志
             elif choice == "0":
                 menu_level = "more"
                 continue

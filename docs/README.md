@@ -9,7 +9,7 @@
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Downloads](https://img.shields.io/github/downloads/oscyfmau/airport-speedtest/total?style=flat-square)](https://github.com/oscyfmau/airport-speedtest/releases)
 
-版本：v4.30.0 ｜ 仓库：[github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) ｜ [更新记录](CHANGELOG.md)
+版本：v4.31.0 ｜ 仓库：[github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) ｜ [更新记录](CHANGELOG.md)
 
 > 本项目由 AI 编写完成，因个人测速需求而开发，按需取用。
 
@@ -21,7 +21,7 @@
 
 ## 快速上手（三步，不会命令行也能用）
 
-1. **下载**：打开 [Releases 页面](https://github.com/oscyfmau/airport-speedtest/releases)，下载最新版的 `airport-speedtest-v4.30.0.zip`（精简包，含运行所需的全部文件）并解压，解压后先看里面的 `使用教程.txt`（会用 git 也可以 `git clone`）
+1. **下载**：打开 [Releases 页面](https://github.com/oscyfmau/airport-speedtest/releases)，下载最新版的 `airport-speedtest-v4.31.0.zip`（精简包，含运行所需的全部文件）并解压，解压后先看里面的 `使用教程.txt`（会用 git 也可以 `git clone`）
 2. **填订阅**：把解压目录里的 `代理.txt.example` 复制一份，改名为 `代理.txt`，用记事本打开，粘贴你的订阅链接后保存
    - 什么是订阅链接？机场服务商提供的网址（一般以 `https://` 开头，内含全部节点信息），在机场官网或客户端 App 的「复制订阅」处获得
 3. **运行**：
@@ -65,7 +65,7 @@ mihomo 内核无需手动下载，首次运行时自动下载到 `bin/`（约 47
 
 两种方式任选：
 
-- 不用 git：到 [Releases 页面](https://github.com/oscyfmau/airport-speedtest/releases) 下载最新版 `airport-speedtest-v4.30.0.zip`（精简包，仅含运行核心文件）并解压；需要自行改代码时再下载 `Source code (zip)`
+- 不用 git：到 [Releases 页面](https://github.com/oscyfmau/airport-speedtest/releases) 下载最新版 `airport-speedtest-v4.31.0.zip`（精简包，仅含运行核心文件）并解压；需要自行改代码时再下载 `Source code (zip)`
 - 用 git：
 
 ```bash
@@ -117,12 +117,12 @@ python core/speed_test.py https://你的订阅链接 --full   # 完整报告
 |---|---|
 | 1. 节点稳定性 | 节点档案视图：常青树/过山车/新面孔/普通分层，近 N 次出现率/可达率/平均速度与波动（N 在设置页调） |
 | 2. 结果对比 | 两次测试横比：速度/延迟/解锁/排名差分，变化>20% 标 ↑↓，晚高峰自动标注（v4.30.0 起可用） |
-| 3. 订阅分组对比 | 多机场横评（v4.31 上线，当前显示开发中） |
+| 3. 订阅分组对比 | 多订阅横评：节点数/平均速度/最高速度/解锁率/平均延迟/风险均值（解锁率排除跳过与错误；v4.31.0 起可用） |
 | 4. 节点筛选测速 | 按节点名关键字（如 `香港 JP`）或前 N 个（`N=10`）筛选后测速，可选简单/标准/快速模式 |
 | 5. 查看上次结果 | 打开 output 目录最新的 PNG 报告 |
 | 6. 结果管理 | 列出 output 最近 15 份报告（时间/模式），输入编号打开、`D编号` 删除 |
 | 7. 订阅管理 | 遮蔽显示 代理.txt 的 URL，可添加（去重）、删除、用记事本打开编辑 |
-| 8. 设置 | 测速窗口秒数（3-30，默认 8）、并行数（1-8，默认 4）、自动打开报告、稳定性窗口（5/10/20，默认 10）、大流量确认（>50 节点需回车确认）开关；保存到 `~/.airport_speedtest.json` 跨会话生效 |
+| 8. 设置 | 测速窗口秒数（3-30，默认 8）、并行数（1-8，默认 4）、自动打开报告、稳定性窗口（5/10/20，默认 10）、大流量确认（>50 节点需回车确认）、保留报告份数（10/30/100，默认 30）、日志保留天数（7-365，默认 30）；保存到 `~/.airport_speedtest.json` 跨会话生效 |
 | 9. 维护 | 进入三级维护菜单 |
 | 0. 返回 | 返回一级菜单 |
 
@@ -130,7 +130,7 @@ python core/speed_test.py https://你的订阅链接 --full   # 完整报告
 |---|---|
 | 1. 更新内核 | 下载最新 mihomo 内核（显示当前/目标版本，先下载后替换） |
 | 2. 环境信息 | 工具/Python/依赖/mihomo 版本、订阅条数、报告与日志文件数 |
-| 3. 清理旧报告 | 清理旧报告与日志（v4.31 上线，当前显示开发中） |
+| 3. 清理旧报告 | 显示占用与将删数，确认后清理；自动清理在每次测后静默执行（v4.31.0 起可用，保留份数/天数在设置页调） |
 | 0. 返回 | 返回二级菜单 |
 
 菜单顶部会显示订阅文件配置状态与上次结果摘要；**代理.txt 有多条订阅时，测试前会列出并让你手动选择**（逗号分隔多选，回车=全部）；测试中按 Ctrl+C 可中断（生成部分报告）；一级菜单按一次 Ctrl+C 返回菜单、连续两次退出，二/三级菜单按一次 Ctrl+C 返回上级。
@@ -309,7 +309,7 @@ mihomo 内核需要从 GitHub 下载（约 47MB），国内网络可能失败。
 - 测速会消耗节点流量（每节点约 10-30MB），"勿跑大流量"节点请谨慎全量测试
 - 网页模拟测速会在标准/完整测试中为每个节点额外增加约 3-8 秒（4 站点并发、8 秒超时）；`--fast` 模式跳过
 - TCP 丢包率为 3 次握手的失败计数，对瞬时抖动敏感，仅作参考
-- 平台支持（v4.30.0）：Linux / macOS 未经实测——mihomo 内核自动下载已修复（Windows `.zip` / Linux/macOS `.gz` 格式，x86_64/arm64 架构，下载与解压路径已实测验证）；macOS 手动下载 mihomo 放入 `bin/` 会被 Gatekeeper 拦截（"无法验证开发者"），请用首次运行自动下载或菜单 `6 更新内核`；Linux 无图形界面时报告不会自动打开（`xdg-open` 不存在，不影响测试与手动查看 `output/`），无中文字体时 PNG 报告中文显示为方框（可安装 Noto Sans CJK）
+- 平台支持（v4.31.0）：Linux / macOS 未经实测——mihomo 内核自动下载已修复（Windows `.zip` / Linux/macOS `.gz` 格式，x86_64/arm64 架构，下载与解压路径已实测验证）；macOS 手动下载 mihomo 放入 `bin/` 会被 Gatekeeper 拦截（"无法验证开发者"），请用首次运行自动下载或菜单 `6 更新内核`；Linux 无图形界面时报告不会自动打开（`xdg-open` 不存在，不影响测试与手动查看 `output/`），无中文字体时 PNG 报告中文显示为方框（可安装 Noto Sans CJK）
 
 ### 隐私说明
 

@@ -17,6 +17,8 @@ DEFAULTS = {
     "auto_open_report": True,   # 测试完成后自动打开 PNG 报告
     "stability_window": 10,     # 节点稳定性视图的近 N 次 run 窗口（5/10/20）
     "confirm_large_run": True,  # 节点数 > 50 时测前需回车确认（v4.29.0 流量预估）
+    "keep_reports": 30,         # 产物清理：output/ 保留最近 N 份报告（10/30/100，v4.31.0）
+    "keep_logs_days": 30,       # 产物清理：log/ 保留最近 N 天（v4.31.0）
 }
 
 
@@ -48,6 +50,16 @@ def _clamp(data: dict) -> None:
     if isinstance(raw, str):
         raw = raw.strip().lower() in ("1", "true", "yes", "on")
     data["confirm_large_run"] = bool(raw)
+    # v4.31.0：产物清理阈值
+    try:
+        kr = int(data.get("keep_reports", 30))
+        data["keep_reports"] = kr if kr in (10, 30, 100) else DEFAULTS["keep_reports"]
+    except (TypeError, ValueError):
+        data["keep_reports"] = DEFAULTS["keep_reports"]
+    try:
+        data["keep_logs_days"] = max(7, min(int(data.get("keep_logs_days", 30)), 365))
+    except (TypeError, ValueError):
+        data["keep_logs_days"] = DEFAULTS["keep_logs_days"]
 
 
 def load_settings() -> dict:

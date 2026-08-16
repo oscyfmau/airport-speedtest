@@ -779,12 +779,14 @@ def _dedupe_nodes(nodes: list[ProxyNode]) -> list[ProxyNode]:
 
 
 def parse_subscription_urls(urls: list) -> list[ProxyNode]:
-    """解析多个订阅 URL 并合并节点（跨订阅同名去重）"""
+    """解析多个订阅 URL 并合并节点（跨订阅同名去重；v4.31.0 起打标 sub_index 供分组对比）"""
     all_nodes = []
     for i, url in enumerate(urls):
         try:
             logger.info("[%d/%d] 订阅解析中: %s", i + 1, len(urls), _mask_url(url))
             ns = parse_subscription_url(url)
+            for n in ns:
+                n.sub_index = i  # v4.31.0：订阅序号（0=第一份），结果 JSON/档案带出
             logger.info("订阅 %s 解析到 %d 个节点", _mask_url(url), len(ns))
             all_nodes.extend(ns)
         except Exception as e:

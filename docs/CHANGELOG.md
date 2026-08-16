@@ -8,6 +8,24 @@
 
 ---
 
+## v4.31.0
+
+### 新增
+- **订阅分组对比菜单**（二级3，`profiles.subscription_group_report`）：按节点 `sub_index` 分组横评（节点数/平均速度/最高速度/解锁率/平均延迟/风险均值）；解锁率口径=实际检测服务中"解锁/可用"计数÷检测数（排除"跳过/错误"，坏节点不稀释）；数据源=所选 run 原始 JSON（缺省最近一次，可输编号选历史）；旧数据无 sub_index 字段显示"未知"并提示只有 1 个订阅
+- **sub_index 打标**：`parser.parse_subscription_urls` 按订阅顺序给节点赋 sub_index（0=第一份）；单 URL 路径 runner 打 0；结果 JSON 每节点带 sub_index、档案证据带出
+- **产物累积清理**（`profiles.cleanup_outputs`）：output/ 保留最近 keep_reports 份 PNG+JSON 配对（10/30/100 默认 30）、log/ 保留最近 keep_logs_days 天（7-365 默认 30）；护栏（只匹配 测速结果_*/测速日志_* 前缀、成对删、profiles.json 永不参与、单文件异常跳过）；自动清理在 run_test 与 _finish_partial 收尾静默执行（事件 `profiles_cleanup`）；维护页 3 手动清理（先 dry_run 统计占用与将删数再确认执行）
+- **设置项**：keep_reports（10/30/100 默认 30）、keep_logs_days（7-365 默认 30）；config 常量 KEEP_REPORTS_DEFAULT/KEEP_LOGS_DAYS_DEFAULT
+
+### 修改
+- 设置菜单加 7=保留报告份数、8=日志保留天数
+- 二级 3 与维护 3 由占位激活
+
+### 修复
+- （无）
+
+### 移除
+- （无）
+
 ## v4.30.0
 
 ### 新增

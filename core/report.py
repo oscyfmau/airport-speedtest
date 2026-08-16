@@ -302,6 +302,7 @@ def export_results_json(results: list[TestResult], mode: str, display_mode: str 
             "tcp_ping_ms": r.tcp_ping,
             "tcp_loss": r.tcp_loss,
             "tcp_probe": r.tcp_probe,
+            "sub_index": r.node.sub_index,  # v4.31.0：订阅序号（分组对比用；旧数据无此字段）
             "http_latency_ms": r.http_latency,
             "speed_mbs": r.speed,
             "max_speed_mbs": r.max_speed,

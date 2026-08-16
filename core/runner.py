@@ -17,7 +17,7 @@ from .ip_quality import *
 from .logging_setup import *
 from .models import *
 from .parser import *
-from .profiles import append_run  # v4.29.0：节点档案归档（收尾调用，无循环依赖）
+from .profiles import append_run, cleanup_outputs  # v4.29.0 归档 / v4.31.0 产物清理
 from .report import *
 from .settings import load_settings  # v4.29.0：大流量确认开关
 from .streaming import *
@@ -51,6 +51,17 @@ def _finish_partial(results_dict: dict, mode: str, display_mode: str,
         logger.warning("JSON 导出失败: %s", _safe_exc_str(e))
         json_path = ""
     append_run(list(results_dict.values()), mode, display_mode, report_ts, json_path)  # v4.29.0：节点档案归档
+    try:
+        # v4.31.0：测后产物自动清理（静默执行，异常不影响报告）
+        st = load_settings()
+        cl = cleanup_outputs(st.get("keep_reports", KEEP_REPORTS_DEFAULT),
+                             st.get("keep_logs_days", KEEP_LOGS_DAYS_DEFAULT))
+        if cl["reports_deleted"] or cl["logs_deleted"]:
+            logger.info("产物清理: 报告 -%d 份、日志 -%d 个",
+                        cl["reports_deleted"], cl["logs_deleted"],
+                        extra=_ev("profiles_cleanup", cl))
+    except Exception:
+        pass
     if img_path:
         logger.info(f"报告已生成: {img_path}")
     if json_path:
@@ -326,7 +337,12 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
     logger.info("解析订阅: %s", " | ".join(_mask_url(u) for u in urls))
     logger.info("=" * 50)
     try:
-        nodes = parse_subscription_urls(urls) if len(urls) > 1 else parse_subscription_url(urls[0])
+        if len(urls) > 1:
+            nodes = parse_subscription_urls(urls)
+        else:
+            nodes = parse_subscription_url(urls[0])
+            for n in nodes:
+                n.sub_index = 0  # v4.31.0：单订阅打 0（分组对比提示"只有 1 个订阅"）
     except Exception as e:
         logger.error("订阅解析失败: %s", _safe_exc_str(e),
                      extra=_ev("run_end", {"completed": False, "reason": "parse_error",
@@ -794,6 +810,17 @@ async def run_test(subscribe_url, mode: str = "basic", sort_by: str = "default",
         json_path = ""
 
     append_run(list(results_dict.values()), mode, output_mode, report_ts, json_path)  # v4.29.0：节点档案归档
+    try:
+        # v4.31.0：测后产物自动清理（静默执行，异常不影响报告）
+        st = load_settings()
+        cl = cleanup_outputs(st.get("keep_reports", KEEP_REPORTS_DEFAULT),
+                             st.get("keep_logs_days", KEEP_LOGS_DAYS_DEFAULT))
+        if cl["reports_deleted"] or cl["logs_deleted"]:
+            logger.info("产物清理: 报告 -%d 份、日志 -%d 个",
+                        cl["reports_deleted"], cl["logs_deleted"],
+                        extra=_ev("profiles_cleanup", cl))
+    except Exception:
+        pass
 
     logger.info(f"{_pad_right('报告', 14)}: {img_path}", extra=_ev("report_done", {"path": img_path}))
     if json_path:
