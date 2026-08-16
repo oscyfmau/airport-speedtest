@@ -127,10 +127,9 @@ _FLAG_PAIR_RE = re.compile(r"([\U0001F1E6-\U0001F1FF]){2}")
 
 
 def _flag_to_text(s: str) -> str:
-    """控制台安全化显示名：国旗 emoji 对 → [国家代码]，其余 astral-plane 字符删除。
-
-    仅用于控制台与进度条显示；节点原名、文件日志、PNG 报告、JSON 均不变。
-    """
+    """显示安全化：国旗 emoji 对 → [国家代码]，其余 astral-plane 字符删除
+    （v4.40.0 修正 docstring：v4.8.1 起 PNG 报告节点名同样经过本函数，避免渲染方框；
+    仅文件日志与 JSON 保留原名）"""
     if not s:
         return s
 

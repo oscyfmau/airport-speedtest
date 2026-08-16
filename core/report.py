@@ -16,6 +16,7 @@ from .models import *
 from .utils import *
 
 def _get_speed_color(s: Optional[float]):
+    """历史接口保留（v4.32.0 起报告改走 `_speed_color`，本函数不再被调用；勿删，外部可能引用）"""
     if s is None: return (200,200,200)
     if s < 0: s = 0
     b = s * 1024 * 1024
@@ -33,6 +34,8 @@ def _bar_color(sp: float) -> tuple:
 
     7 档：≤4MB/s→浅绿(102,255,102)、4-8→黄(255,255,102)、8-16→橙(255,178,102)、
     16-24→红(255,102,102)、24-32→紫(226,140,255)、32-40→蓝(102,204,255)、40MB/s+→深蓝(102,102,255)
+
+    v4.32.0 起报告柱状图改走 `_speed_color` 整格色块方案，本函数保留为兼容接口（勿删）。
     """
     b = sp * 1024 * 1024
     ramp = [
@@ -579,6 +582,7 @@ def generate_report_image(results, mode, total_time, sort_by="default", display_
     # ---- 计算列宽 ----
     # 数值列（延迟/速度）自适应列宽 = max(默认宽, 最长文本宽 + 20)（左右各 10px 余量，数字永不被截断）；
     # 其余列沿用现有自动估宽逻辑（内容自适应 + 截断加省略号）
+    # v4.40.0：表头标题宽一并纳入估算（流媒体列标题如 YouTube 可能宽于默认列宽导致表头截断）
     numeric_cids = {"ping", "http", "web_avg", "speed", "maxspeed"}
     cw = {}
     for cid, title, dw, _ in cols:
@@ -591,6 +595,11 @@ def generate_report_image(results, mode, total_time, sort_by="default", display_
             except Exception:
                 tw = int(max(dw - 10, len(txt) * 12 + 16))
             w = max(w, tw)
+        try:
+            th = int(font.getlength(title) + extra)  # v4.40.0：表头宽纳入
+        except Exception:
+            th = int(max(dw - 10, len(title) * 12 + 16))
+        w = max(w, th)
         cw[cid] = int(w)
 
     # ---- 版式骨架（v4.32.0） ----
@@ -601,6 +610,10 @@ def generate_report_image(results, mode, total_time, sort_by="default", display_
     tw = int(iw + pad * 2)
     # 最多显示 300 个节点，防止图片内存溢出
     max_rows = 300
+    if len(results) > max_rows:
+        # v4.40.0：截断时明确提示（PNG 仅前 300 行，完整数据在同名 JSON）
+        logger.warning("节点数 %d 超过报告上限 %d，PNG 仅显示前 %d 个（完整数据见同名 JSON）",
+                       len(results), max_rows, max_rows)
     nh = min(len(results), max_rows)
 
     # ---- 多订阅分组（v4.33.0）：≥2 份订阅时按 sub_index 分组绘制 ----

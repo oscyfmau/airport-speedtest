@@ -3,7 +3,7 @@
 """配置与常量（单一数据源；v4.10 起为真定义模块）"""
 import os
 
-VERSION = "4.39.0"  # SemVer：主版本.次版本.修订号
+VERSION = "4.40.0"  # SemVer：主版本.次版本.修订号
 
 
 # 产物累积清理默认值（v4.31.0，core/profiles.cleanup_outputs；settings 持久化可覆盖）
