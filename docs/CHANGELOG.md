@@ -8,6 +8,25 @@
 
 ---
 
+## v4.42.0
+
+### 新增
+- （无）
+
+### 修改
+- `parse_vless` 映射 `fp` 查询参数 → `client-fingerprint`（uTLS 指纹）；`security=reality` 且无 `fp` 时缺省 `client-fingerprint: chrome`（mihomo REALITY 强制要求 uTLS 指纹，缺失时运行报 "REALITY is based on uTLS, please set a client-fingerprint"）
+- `parse_vmess` 在 tls 分支映射 JSON 字段 `fp` → `client-fingerprint`
+- `parse_trojan`/`parse_hysteria2` 映射 `fp` 查询参数 → `client-fingerprint`（mihomo 对 vless/vmess/trojan/hysteria2/anytls 均接受该字段，`mihomo -t` 实测通过）
+- `parse_vless`/`parse_vmess` 的 ws 分支改输出 `ws-opts` 嵌套结构（`{"path": ..., "headers": {"Host": ...}}`），替代旧扁平 `ws-path`/`ws-headers` 键（mihomo 忽略扁平键：WS 升级路径变 "/" 且无 Host 头 → Cloudflare 前置 403，2026-08-18 实测对比确认）
+- tls/ws 无 `fp` 时保持无指纹不误设（Cloudflare 前置可能按指纹白名单放行，误设可能 403）
+
+### 修复
+- 订阅 URI 格式携带 `fp` 时被解析器丢弃，导致两类节点全部测速失败（直连 TCP 正常、mihomo 切换正常、下载全部 "下载失败"）：reality 节点缺 uTLS 指纹被 mihomo 拒握手；经 Cloudflare 前置的 ws/tls 节点无浏览器指纹被 CDN 403——2026-08-18 实测吹雪订阅（vless 22 节点，`fp=safari/ios`）修复前全灭、修复后两类节点均正常测速
+- vless/vmess ws 传输节点输出扁平 `ws-path`/`ws-headers` 键（mihomo 忽略）导致 CF 前置 403——与 fp 修复同批实测确认（同一节点扁平键失败、`ws-opts` 200 下载成功）
+
+### 移除
+- （无）
+
 ## v4.41.0
 
 ### 新增

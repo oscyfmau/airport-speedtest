@@ -131,13 +131,19 @@ def parse_vmess(uri: str) -> Optional[ProxyNode]:
                 extra["servername"] = data["sni"]
             elif data.get("host"):
                 extra["servername"] = data["host"]
+            if data.get("fp"):  # v4.42.0：uTLS 指纹透传（v2rayN vmess 的 fp 字段）
+                extra["client-fingerprint"] = data["fp"]
         net = data.get("net", "")
         if net == "ws":
             extra["network"] = "ws"
+            # v4.42.0：ws-opts 嵌套结构（mihomo 不认扁平 ws-path/ws-headers）
+            opts = {}
             if data.get("path"):
-                extra["ws-path"] = data["path"]
+                opts["path"] = data["path"]
             if data.get("host"):
-                extra["ws-headers"] = {"Host": data["host"]}
+                opts["headers"] = {"Host": data["host"]}
+            if opts:
+                extra["ws-opts"] = opts
         elif net in ("tcp", "kcp", "http", "grpc", "quic", "h2"):
             extra["network"] = net
         if net == "grpc":
@@ -193,6 +199,14 @@ def parse_vless(uri: str) -> Optional[ProxyNode]:
                 extra["reality-opts"] = opts
         elif sec in ("tls", "xtls"):
             extra["tls"] = True
+        # v4.42.0：fp 参数 → client-fingerprint（uTLS 指纹）。REALITY 强制要求指纹
+        # （缺失时 mihomo 运行报 "REALITY is based on uTLS, please set a client-fingerprint"，
+        # 2026-08 实测吹雪订阅 22 节点全部因此握手失败），缺省 chrome 与主流客户端一致；
+        # tls/ws 无 fp 时保持无指纹（Cloudflare 前置可能按指纹白名单放行，误设可能 403）
+        if params.get("fp"):
+            extra["client-fingerprint"] = params["fp"][0]
+        elif sec == "reality":
+            extra["client-fingerprint"] = "chrome"
         if sec in ("reality", "tls", "xtls"):
             # add 为 IP 时 TLS 需要 servername（SNI），否则证书校验失败
             if params.get("sni"):
@@ -203,10 +217,16 @@ def parse_vless(uri: str) -> Optional[ProxyNode]:
             extra["flow"] = params["flow"][0]
         extra["network"] = params.get("type", ["tcp"])[0]
         if extra["network"] == "ws":
+            # v4.42.0：改输出 ws-opts 嵌套结构（mihomo 只认 ws-opts；
+            # 旧扁平 ws-path/ws-headers 被 mihomo 忽略 → 升级到 "/" 无 Host → CF 前置 403，
+            # 2026-08-18 实测吹雪订阅 11 个 ws 节点因此全灭）
+            opts = {}
             if params.get("path"):
-                extra["ws-path"] = params["path"][0]
+                opts["path"] = params["path"][0]
             if params.get("host"):
-                extra["ws-headers"] = {"Host": params["host"][0]}
+                opts["headers"] = {"Host": params["host"][0]}
+            if opts:
+                extra["ws-opts"] = opts
         elif extra["network"] == "grpc":
             svc = (params.get("serviceName") or params.get("path") or [None])[0]
             if svc:
@@ -223,6 +243,8 @@ def parse_trojan(uri: str) -> Optional[ProxyNode]:
         extra = {"password": user}
         if params.get("sni"):
             extra["sni"] = params["sni"][0]
+        if params.get("fp"):  # v4.42.0：uTLS 指纹透传（与 vless/anytls 口径一致）
+            extra["client-fingerprint"] = params["fp"][0]
         if params.get("allowInsecure"):
             # v4.27.0：与 hysteria2/anytls 口径统一（true/1/yes 均算开启）
             extra["skip-cert-verify"] = params["allowInsecure"][0].lower() in ("true", "1", "yes")
@@ -346,6 +368,8 @@ def parse_hysteria2(uri: str) -> Optional[ProxyNode]:
             extra["sni"] = params["sni"][0]
         if params.get("insecure"):
             extra["skip-cert-verify"] = params["insecure"][0].lower() in ("true", "1", "yes")
+        if params.get("fp"):  # v4.42.0：uTLS 指纹透传（mihomo hysteria2 支持，-t 实测通过）
+            extra["client-fingerprint"] = params["fp"][0]
         # obfs（salamander）参数映射
         if params.get("obfs"):
             extra["obfs"] = params["obfs"][0]
