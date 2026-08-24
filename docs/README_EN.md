@@ -9,7 +9,7 @@ Pull all nodes from an airport subscription, test latency, speed, streaming unlo
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Downloads](https://img.shields.io/github/downloads/oscyfmau/airport-speedtest/total?style=flat-square)](https://github.com/oscyfmau/airport-speedtest/releases)
 
-Version: v4.42.0 | Repository: [github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) | [Changelog](CHANGELOG.md)
+Version: v4.43.0 | Repository: [github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) | [Changelog](CHANGELOG.md)
 
 > This project was written by AI and developed for personal needs — take it as-is.
 
@@ -169,19 +169,19 @@ Subscription URL(s) (captures subscription-userinfo) → parse with multiple UA 
 
 ## Report Terminology
 
-The report colors follow intuition (green = fast/good, red = slow/bad). All text is drawn in pure black with no outline, and no color legend is printed inside the report; full-cell color blocks express quality, numbers are only for precise reading.
+The report colors follow intuition (green/blue = fast/good, orange/pink = slow/bad). All text is drawn in pure black with no outline, and no color legend is printed inside the report; full-cell color blocks express quality, numbers are only for precise reading.
 
-### Color Meaning (v4.32.0)
+### Color Meaning (v4.43.0 MiaoKo Blue-green style)
 
 | Column | Color block |
 |---|---|
-| RTT / HTTP latency / Web Avg | Full-cell block: ≤50ms green `#1E9650` → 500ms+ deep red `#D2321E` (linear interpolation between keyframes); `Timeout`/`--`/`UDP`/`Proxy reachable` get a gray block |
-| Avg / Max speed | Full-cell block: slow = deep red `#B42823` → fast = deep green `#287341`; when the report max speed is <8MB/s the ramp is stretched linearly across 0..max (slow nodes still get distinct colors), otherwise a log mapping is used (a spike does not squash slow nodes into one red); nodes without speed show the failure reason (zebra background, black text) |
-| Streaming | Unlocked/Available = deep green, Failed/Blocked/Connection failed = deep red, N/A = deep cyan, Unknown = mid gray, Skipped (node unreachable) = gray-blue, untested = no fill |
-| IP type | Residential/Mobile = green, Business/DC = yellow, Proxy/VPN/Tor = red |
-| IP risk | Low (<20) = green, Medium (20-59) = yellow, High (60+) = red |
-| Reuse | Full reuse = red, Transit reuse = yellow, Exit reuse = cyan |
-| Per-second bars | Bar color = absolute speed (same ramp as the speed cells); bar height = in-row variation shape (not speed) |
+| RTT / HTTP latency / Web Avg | Full-cell block: fast = bright green `#4DD06F` → mid = yellow-green `#8BC34A` → slow = deep orange `#FF7000` (linear interpolation between keyframes); `Timeout`/`--`/`UDP`/`Proxy reachable` get a light-gray block `#E9E9E9` |
+| Avg / Max speed | Full-cell block (MiaoKo blue-green cool scheme): slow = light green `#B9E67D` → mid = blue → fast = deep blue `#0D9AF2`; scored per-node by a log2 mapping (reference cap 25MB/s, above which it is the deepest blue; the high-speed band is gentle so overall contrast is small); nodes without speed show the failure reason (white background, black text) |
+| Streaming | Unlocked/Available = light green, Pending/Originals-only = soft yellow, Failed/Blocked/Connection failed = soft pink, N/A/Query failed = mid gray, Unknown = gray, Skipped (node unreachable) = dark gray, untested = no fill |
+| IP type | Residential/Mobile = light green, Business/DC = soft yellow, Proxy/VPN/Tor = soft pink |
+| IP risk | Low (<20) = light green, Medium (20-59) = soft yellow, High (60+) = soft pink |
+| Reuse | Full reuse = deep red, Transit reuse = deep yellow, Exit reuse = deep cyan |
+| Per-second bars | About 10 bars in a tight row (any sampling length is resampled to 10 points); bar height = that second's absolute speed / report max (bottom-aligned, reflects real speed), bar color = absolute speed (same blue-green ramp as the speed cells, comparable across rows); nodes without per-second data show 10 short bars of equal height |
 
 ### Latency & Reachability Column
 
@@ -212,7 +212,7 @@ The report colors follow intuition (green = fast/good, red = slow/bad). All text
 | `Speed too low` | Cumulative download in the first 3 seconds below 64KB; judged too slow and terminated early |
 | `Download failed` | Total download in the 8s window below 256KB (connection failure or block page) |
 | `--` | No data (node never entered the speed test queue, or all download sources failed) |
-| Per-second speed bar chart | Always 7 bars (any sampling length is resampled to 7 points); bar height = in-row min-max normalization (shape only), bar color = absolute speed (red = slow → green = fast, same ramp as the speed cells, comparable across rows), 1px white gaps between bars, no gray background; nodes without per-second data show 7 short bars of equal height; also drawn in quick mode (since v4.33.0) |
+| Per-second speed bar chart | About 10 bars (any sampling length is resampled to 10 points); bar height = that second's absolute speed / report max (bottom-aligned, reflects real speed), bar color = absolute speed (slow = light green → fast = deep blue, same blue-green ramp as the speed cells, comparable across rows), 1px white gaps between bars; nodes without per-second data show 10 short bars of equal height; also drawn in quick mode (since v4.33.0) |
 
 ### HTTP Status Codes (numbers in parentheses in the streaming column)
 
@@ -244,7 +244,7 @@ The report colors follow intuition (green = fast/good, red = slow/bad). All text
 | `错误(连接失败)` — Error (connection failed) | Request could not establish a connection (node may be unreachable or timed out) |
 | `跳过(节点不可达)` — Skipped (node unreachable) | First 3 services all failed to connect for this node; judged as a dead node, remaining services not actually tested |
 
-OpenAI / Claude / Perplexity checks (v4.33.0): the web endpoints of these three apply Cloudflare bot protection to datacenter IPs with non-browser clients (supported-region nodes got false 403 "blocked"), so the API endpoints are used instead — reaching `api.openai.com`, `api.anthropic.com` or `api.perplexity.ai` at all (401/400/405/429/5xx business errors) means the region is allowed, 403 means region blocked; when allowed the exit region is labeled via `cdn-cgi/trace`. Since v4.34.0 the three checkers share the same semantics (previously chatgpt fell back to the web chain on 429/5xx and contradicted the claude/perplexity columns on the same node), and when the API is unreachable the web fallback no longer reports "blocked" (a web 403 cannot distinguish region block from bot protection, so it shows `未知` / unknown).
+OpenAI / Claude / Perplexity checks (v4.33.0): the web endpoints of these three apply Cloudflare bot protection to datacenter IPs with non-browser clients (supported-region nodes got false 403 "blocked"), so the API endpoints are used instead — reaching `api.openai.com`, `api.anthropic.com` or `api.perplexity.ai` at all (401/400/405/429/5xx business errors) means the region is allowed, 403 means region blocked; when allowed the exit region is labeled via `cdn-cgi/trace`. Since v4.34.0 the three checkers share the same semantics (previously chatgpt fell back to the web chain on 429/5xx and contradicted the claude/perplexity columns on the same node), and when the API is unreachable the web fallback no longer reports "blocked" (a web 403 cannot distinguish region block from bot protection, so it shows `未知` / unknown). Since v4.43.0 Gemini uses the same API-endpoint discrimination — `generativelanguage.googleapis.com/v1beta/models` with an invalid key: 403 = blocked, otherwise reached (401/400/429/5xx) = available; the gemini.google.com web fallback downgrades "blocked" to "unknown" (the web is subject to Google bot protection).
 
 ### IP Quality Column (standard test mode)
 
@@ -265,11 +265,12 @@ OpenAI / Claude / Perplexity checks (v4.33.0): the web endpoints of these three 
 
 ### Header & Footer
 
+- Report layout: title bar/footer light gray `#EBEBEB`, header and data area pure white; light column separators `#E6E6E6`, thin light-gray outer frame `#C8C8C8` (no heavy black frame)
 - Header line 1: `speed_test.py vX.Y.Z | mode name` (centered, bold); line 2: `Nodes: N | Duration: Xs` (left), `Sort: sort name` (right)
-- Footer line 1: latency terminology note (in quick mode: `Quick mode (parallel approximate speed test)`)
+- Footer line 1: green check "TLS certificate verified" + latency terminology note (in quick mode: `Quick mode (parallel approximate speed test)`)
 - Footer line 2: `Nodes: 26/33 reachable | Avg latency: 234ms` (plus `UDP nodes: 4 (verified via HTTP)` when UDP nodes exist); `reachable` = direct-connect successes + tunnel-probe successes / total nodes; `Average latency` = average latency of nodes with successful direct TCP
 - Footer line 3: `Test time: YYYY-MM-DD HH:MM:SS (timezone) | Downloaded X this run` (left), `Powered by speed_test.py vX.Y.Z` (right)
-- Subscription group bands (v4.33.0): when ≥2 subscriptions are selected, the report is drawn grouped by subscription — a full-width `Subscription N (M nodes)` band (#E4E4E4) above each group separates them; group order = subscription order, within-group order = the chosen sort; row numbers stay continuous across groups
+- Subscription group bands (v4.33.0): when ≥2 subscriptions are selected, the report is drawn grouped by subscription — a full-width `Subscription N (M nodes)` band (#EBEBEB light gray) above each group separates them; group order = subscription order, within-group order = the chosen sort; row numbers stay continuous across groups
 
 ## Sorting
 

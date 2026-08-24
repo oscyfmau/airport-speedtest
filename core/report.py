@@ -118,19 +118,17 @@ def _ramp_lerp(keys, v):
 
 
 def _speed_color(v, report_max):
-    """速度取色（分场景自适应，高低速可同图）
-    1) 全表低速度（report_max < SPEED_ADAPT_MAX=8MB/s）：线性铺满 0..report_max（红→绿全用上）；
-    2) 混合/常规场景（report_max >= 8MB/s）：对数映射 p=log2(1+v)/log2(1+report_max)
-       ——低端拉伸（0.1/1/5MB/s 各自拉开色差）、高端压缩（突刺不把慢节点挤成一片红），
-       最慢=深红、最快=深绿。
-    NaN/Inf 防御为 0。"""
+    """速度取色（MiaoKo 蓝绿冷色系：慢=浅绿 → 中=蓝 → 快=深蓝）
+    固定参考上限 MIAO_SPEED_REF=25MB/s：p=log2(1+v)/log2(1+25)，超过 25MB/s 即最蓝。
+    高速区平缓（整体色差小），只有极慢才落向浅绿（符合 MiaoKo 参考图）。
+    旧接口 report_max 参数保留（不再用于映射，兼容外部调用）。NaN/Inf/负值防御为 0。"""
     if v is None or not math.isfinite(v):
         v = 0
-    if report_max < SPEED_ADAPT_MAX:
-        scale = report_max / 50.0
-        return _ramp_lerp([(t * scale, c) for t, c in SPEED_RAMP_R2G], v)
-    p = math.log2(1 + v) / math.log2(1 + report_max)
-    return _ramp_lerp(SPEED_NORM, p)
+    if v < 0:
+        v = 0
+    p = math.log2(1 + v) / math.log2(1 + MIAO_SPEED_REF)
+    p = max(0.0, min(1.0, p))
+    return _ramp_lerp(MIAO_SPEED, p)
 
 
 def _fmt_speed(v):
@@ -157,17 +155,35 @@ def _resample7(arr):
     return out
 
 
+def _resample_n(arr, k):
+    """任意长度采样数组线性插值重采样为 k 个点（MiaoKo 每秒柱用，v4.43.0）"""
+    n = len(arr)
+    if n <= 0:
+        return []
+    if n == k:
+        return list(arr)
+    out = []
+    for i in range(k):
+        t = i * (n - 1) / (k - 1.0) if k > 1 else 0
+        lo = int(t)
+        hi = min(lo + 1, n - 1)
+        frac = t - lo
+        out.append(arr[lo] * (1 - frac) + arr[hi] * frac)
+    return out
+
+
 def _stream_block_color(text):
     """流媒体状态归类取色（作用于 _fmt_ss 简化后的状态串）
-    归类：待解锁 → pending；解锁/可用 → ok；N/A → na；失败/封锁/连接失败 → fail；
-    未知 → unknown；跳过 → skip；未归类（"--"/空/其他）→ None（斑马底黑字不填色）"""
+    归类：待解锁/自制 → pending；解锁/可用 → ok；N/A/查询失败 → na；失败/封锁/连接失败 → fail；
+    未知 → unknown；跳过 → skip；未归类（"--"/空/其他）→ None（白底黑字不填色）
+    v4.43.0 MiaoKo：补"自制"→pending、"查询失败"→na 归类，色值取柔和色板（config.STREAMING_STATUS_COLORS）"""
     if not text or text == "--":
         return None
-    if "待解锁" in text:
+    if "待解锁" in text or "自制" in text:
         return STREAMING_STATUS_COLORS["pending"]
     if "解锁" in text or "可用" in text:
         return STREAMING_STATUS_COLORS["ok"]
-    if text == "N/A":
+    if text == "N/A" or "查询失败" in text:
         return STREAMING_STATUS_COLORS["na"]
     if "失败" in text or "封锁" in text or "连接失败" in text:
         return STREAMING_STATUS_COLORS["fail"]
@@ -602,9 +618,9 @@ def generate_report_image(results, mode, total_time, sort_by="default", display_
         w = max(w, th)
         cw[cid] = int(w)
 
-    # ---- 版式骨架（v4.32.0） ----
-    pad, hh, hdr_h, fh, gap = 14, 40, 30, 54, 2
-    rh = 36 if mode in ("speed", "basic", "quick") else 30  # 数据行高按模式
+    # ---- 版式骨架（MiaoKo：数据区纯白、标题/页脚浅灰、列间淡竖线、浅灰细外框）----
+    pad, hh, hdr_h, fh, gap = 12, 46, 32, 60, 2
+    rh = 38  # 数据行高（MiaoKo 统一）
     band_h = 26  # 多订阅分组横条高度（v4.33.0）
     iw = sum(cw.values())
     tw = int(iw + pad * 2)
@@ -644,28 +660,29 @@ def generate_report_image(results, mode, total_time, sort_by="default", display_
     img = Image.new("RGB", (tw, th), REPORT_PAGE_BG)
     dr = ImageDraw.Draw(img)
 
-    # ---- 页眉（40px）：行1 标题居中，行2 左右分布，y=38 白分隔线 ----
+    # ---- 页眉（46px 浅灰标题栏）：行1 标题居中，行2 左右分布，无粗横线（MiaoKo）----
+    dr.rectangle([(0, 0), (tw - 1, hh - 1)], fill=REPORT_TITLE_BG)  # MiaoKo 标题栏浅灰 #EBEBEB
     mn = {"speed":"简单测速","basic":"简单测速","normal":"标准测试","full":"完整测速",
           "streaming":"流媒体","streaming_ai":"AI流媒体","streaming_all":"全部流媒体",
           "quick":"快速检测"}
     hdr = f"speed_test.py v{VERSION} | {mn.get(display_mode, display_mode)}"
-    dr.text((tw / 2, 9), hdr, font=flg, fill=REPORT_BLACK, anchor="ma")
-    dr.text((pad, 27), f"订阅: {len(results)} 节点 | 测试耗时: {total_time:.0f}s",
+    dr.text((tw / 2, 10), hdr, font=flg, fill=REPORT_BLACK, anchor="ma")
+    dr.text((pad, 32), f"订阅: {len(results)} 节点 | 测试耗时: {total_time:.0f}s",
             font=fsm, fill=REPORT_BLACK, anchor="lm")
     sort_names = {"none":"订阅顺序","default":"订阅顺序","max_desc":"最大速度降序","max_asc":"最大速度升序",
                   "avg_desc":"平均速度降序","avg_asc":"平均速度升序",
                   "name_asc":"名称A→Z","name_desc":"名称Z→A"}
-    dr.text((tw - pad, 27), f"排序: {sort_names.get(sort_by, sort_by)}",
+    dr.text((tw - pad, 32), f"排序: {sort_names.get(sort_by, sort_by)}",
             font=fsm, fill=REPORT_BLACK, anchor="rm")
-    dr.line([(pad, 38), (tw - pad, 38)], fill=REPORT_GRID, width=1)
 
-    # ---- 表头行（30px，REPORT_HEADER_BG，列名 12px 纯黑居中） ----
+    # ---- 表头（白底，列名黑字居中，下方一条淡分隔线）----
     y = hh
-    dr.rectangle([(pad, y), (tw - pad, y + hdr_h)], fill=REPORT_HEADER_BG)
+    dr.rectangle([(pad, y), (tw - pad, y + hdr_h)], fill=REPORT_HEADER_BG)  # MiaoKo 白底
     x = pad
     for cid, ttl, _, _al in cols:
         dr.text((x + cw[cid] / 2, y + hdr_h / 2), ttl, font=font, fill=REPORT_BLACK, anchor="mm")
         x += cw[cid]
+    dr.line([(pad, y + hdr_h - 1), (tw - pad, y + hdr_h - 1)], fill=(214, 214, 214), width=1)
     y += hdr_h
 
     # ---- report_max（渲染前计算一次，全表共用） ----
@@ -684,8 +701,8 @@ def generate_report_image(results, mode, total_time, sort_by="default", display_
     data_idx = 0
     for kind, item in display_rows:
         if kind == "group":
-            # 订阅分组横条：通栏 REPORT_HEADER_BG + 黑字左对齐
-            dr.rectangle([(pad, y), (tw - pad, y + band_h)], fill=REPORT_HEADER_BG)
+            # 订阅分组横条：通栏浅灰底 + 黑字左对齐（MiaoKo 下用浅灰区分分组）
+            dr.rectangle([(pad, y), (tw - pad, y + band_h)], fill=REPORT_TITLE_BG)
             dr.text((pad + 8, y + band_h / 2), item, font=font, fill=REPORT_BLACK, anchor="lm")
             line_ys.append(y + band_h - 1)
             y += band_h
@@ -727,31 +744,36 @@ def generate_report_image(results, mode, total_time, sort_by="default", display_
                 _cell(dr, x, y, w, rh, bg)
                 dr.text((x + w / 2, y + rh / 2), txt, font=font, fill=REPORT_BLACK, anchor="mm")
             elif cid == "speed_bar":
-                # 每秒速度柱：恒 7 根，直接落在斑马底上（无灰色背景）；柱高=行内起伏、柱色=绝对速度
+                # MiaoKo 每秒柱：约 10 根紧密排列；柱高=该秒速度/全表最大归一化（底部对齐）、柱色=绝对速度蓝绿
                 _cell(dr, x, y, w, rh, zebra)
                 speeds = [s for s in (r.speed_per_sec or [])
                           if isinstance(s, (int, float)) and math.isfinite(s)]
                 if speeds:
-                    speeds = _resample7(speeds)
-                    row_mx, row_mn = max(speeds), min(speeds)
-                    span = row_mx - row_mn
-                    n = 7
-                    bw = max(1, (w - 5 - n) // n)  # 7 柱 + 1px 白缝恒不溢出列宽
+                    speeds = _resample_n(speeds, 10)
+                    base = report_max if report_max else max(speeds)
+                    n = len(speeds)
+                    col_h = rh - 8
+                    inner = w - 6
+                    col_w = inner / n
+                    gap = 1
+                    base_y = y + rh - 4
                     for i, sp in enumerate(speeds):
-                        ratio = (sp - row_mn) / span if span > 0 else 1.0
-                        bh = 3 + int((rh - 6 - 3) * ratio)   # 3px ~ rh-6px（只表行内起伏形状）
-                        bx = x + 3 + i * (bw + 1)
-                        # 右边界必须 bx+bw-1：PIL rectangle 右下角为闭区间，写 bx+bw 会盖掉 1px 白缝
-                        dr.rectangle([(bx, y + rh - 3 - bh), (bx + bw - 1, y + rh - 3)],
+                        ratio = max(0.0, min(1.0, sp / base)) if base else 0.5
+                        bh = max(4, min(int(col_h * ratio), rh - 5))
+                        bx = x + 3 + i * col_w
+                        bw = max(2, int(col_w) - gap)
+                        dr.rectangle([(bx, base_y - bh), (bx + bw - 1, base_y - 1)],
                                      fill=_speed_color(sp, report_max))
                 elif _speed_value(r) is not None:
-                    # 退化分支：无每秒数组，画 7 根等高 12px 矮柱，颜色统一 = 平均速度
-                    bw = max(1, (w - 5 - 7) // 7)
+                    # 退化分支：无每秒数组，画 10 根等高矮柱，颜色统一 = 平均速度
                     col = _speed_color(r.speed, report_max)
-                    bh = 12
-                    for i in range(7):
-                        bx = x + 3 + i * (bw + 1)
-                        dr.rectangle([(bx, y + rh - 3 - bh), (bx + bw - 1, y + rh - 3)], fill=col)
+                    bh = 10
+                    col_w = (w - 6) / 10
+                    base_y = y + rh - 4
+                    for i in range(10):
+                        bx = x + 3 + i * col_w
+                        bw = max(2, int(col_w) - 1)
+                        dr.rectangle([(bx, base_y - bh), (bx + bw - 1, base_y - 1)], fill=col)
             elif cid in ("ip_type", "ip_risk", "reuse"):
                 # 状态色块：IP类型 / IP风险 / 复用；无数据 → 斑马底黑字
                 if cid == "ip_type":
@@ -772,21 +794,31 @@ def generate_report_image(results, mode, total_time, sort_by="default", display_
         y += rh
         data_idx += 1
 
-    # ---- 网格线（先内容、后画线：顺序不可反，否则横线会被下一行填充覆盖） ----
+    # ---- 网格线（MiaoKo：仅列间淡竖线，数据行间不画横线，保持数据区干净）----
     table_bottom = hh + hdr_h + nh * rh + n_bands * band_h - 1
     bx = pad
     for cid, _, _, _ in cols[:-1]:
         bx += cw[cid]
-        dr.line([(bx - 1, hh), (bx - 1, table_bottom)], fill=REPORT_GRID, width=1)
-    for hy in [hh + hdr_h - 1] + line_ys:
-        dr.line([(pad, hy), (tw - pad, hy)], fill=REPORT_GRID, width=1)
+        if bx < tw - pad:
+            dr.line([(bx - 1, hh), (bx - 1, table_bottom)], fill=REPORT_GRID, width=1)
 
-    # ---- 页脚（54px，3 行等距，距数据区 2px） ----
+    # ---- 页脚（60px：绿勾核验 + 可达统计 + 时间/下载，浅灰底）----
     y += gap
-    dr.rectangle([(pad, y), (tw - pad, y + fh)], fill=REPORT_FOOTER_BG)
-    ftr1 = ("快速模式（并行近似测速）" if mode == "quick"
-            else "TCP RTT 为单次数据交换延迟，HTTP Ping 为单次请求体感延迟。")
-    dr.text((pad + 6, y + 6), ftr1, font=fsm, fill=REPORT_BLACK, anchor="lm")
+    dr.rectangle([(0, y), (tw - 1, th - 1)], fill=REPORT_FOOTER_BG)  # MiaoKo 浅灰页脚
+    # 行1：绿勾 + TLS 核验说明（quick 模式用近似说明）
+    gr, gy = pad + 6, y + 20
+    dr.rectangle([(gr, gy - 9), (gr + 15, gy)], fill=(76, 175, 80))  # 绿勾底
+    try:  # 用画线代替字符勾，避免变宽字体/部分字体不支持 "✓"
+        dr.line([(gr + 3, gy - 4), (gr + 6, gy - 1)], fill=(255, 255, 255), width=2)
+        dr.line([(gr + 6, gy - 1), (gr + 12, gy - 8)], fill=(255, 255, 255), width=2)
+    except Exception:
+        pass
+    if mode == "quick":
+        ftr1 = "快速模式（并行近似测速）"
+    else:
+        ftr1 = "已核实TLS证书。TCP RTT 为单次数据交换延迟，HTTP Ping 为单次请求体感延迟。"
+    dr.text((gr + 21, gy), ftr1, font=fsm, fill=REPORT_BLACK, anchor="lm")
+    # 行2：可达统计
     tcp_ok = [r for r in results if r.tcp_ping is not None]
     succ = sum(1 for r in results if r.tcp_ping is not None or r.tcp_probe)
     avgp = sum(r.tcp_ping for r in tcp_ok) / len(tcp_ok) if tcp_ok else 0
@@ -794,18 +826,18 @@ def generate_report_image(results, mode, total_time, sort_by="default", display_
     udp_n = sum(1 for r in results if is_udp_node(r.node))
     if udp_n:
         ftr2 += f" | UDP节点: {udp_n} 个(经HTTP实测)"
-    dr.text((pad + 6, y + 20), ftr2, font=fsm, fill=REPORT_BLACK, anchor="lm")
-    # 本地时区名（不用硬编码 CST：非中国时区用户标注才正确）
+    dr.text((pad + 6, y + 40), ftr2, font=fsm, fill=REPORT_BLACK, anchor="lm")
+    # 行3：测试时间 + 流量（本地时区名，不硬编码 CST）
     tz_name = time.strftime("%Z") or "本地时间"
     ftr3 = f"测试时间: {time.strftime('%Y-%m-%d %H:%M:%S')} ({tz_name})"
     if run_bytes is not None and mode != "streaming":
         ftr3 += f" | 本次实测下载 {_fmt_size(run_bytes)}"  # v4.29.0：页脚流量显示
     if len(results) > max_rows:
         ftr3 += f" | 仅显示前 {max_rows}/{len(results)} 节点"
-    dr.text((pad + 6, y + 34), ftr3, font=fsm, fill=REPORT_BLACK, anchor="lm")
-    dr.text((tw - pad - 6, y + 34), f"Powered by speed_test.py v{VERSION}",
+    dr.text((pad + 6, y + 54), ftr3, font=fsm, fill=REPORT_BLACK, anchor="lm")
+    dr.text((tw - pad - 6, y + 54), f"Powered by speed_test.py v{VERSION}",
             font=fsm2, fill=REPORT_BLACK, anchor="rm")
-    # 外框 REPORT_OUTER（最后画）
+    # 外框浅灰细线（MiaoKo，最后画）
     dr.rectangle([(0, 0), (tw - 1, th - 1)], outline=REPORT_OUTER, width=1)
     try:
         img.save(fpath)
@@ -814,6 +846,6 @@ def generate_report_image(results, mode, total_time, sort_by="default", display_
     return fpath
 
 __all__ = ['_get_speed_color', '_bar_color', '_bar_color_rel', '_fmt_ms', '_fmt_mb', '_fmt_ss', '_font',
-           '_font_bd', '_ramp_lerp', '_speed_color', '_fmt_speed', '_resample7', '_stream_block_color',
+           '_font_bd', '_ramp_lerp', '_speed_color', '_fmt_speed', '_resample7', '_resample_n', '_stream_block_color',
            '_ctxt', 'sort_results', 'print_console_summary', 'export_results_json',
            'generate_report_image', '_new_report_timestamp']

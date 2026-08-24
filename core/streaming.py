@@ -169,7 +169,11 @@ async def check_netflix(session: aiohttp.ClientSession, proxy: str) -> str:
 
 
 async def check_disney(session: aiohttp.ClientSession, proxy: str) -> str:
-    """检测 Disney+（跟进重定向；区域不可用页/无订阅文案不算解锁）"""
+    """检测 Disney+（跟进重定向；区域不可用页/无订阅文案不算解锁）
+
+    v4.43.0：对齐 check_max——200 有 countryCode → 解锁(region)；200 无 countryCode
+    降为"可用"（此前 200 直接"解锁"，把"区域可达但无地区标识"误当解锁）
+    """
     try:
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
         async with session.get(
@@ -187,7 +191,10 @@ async def check_disney(session: aiohttp.ClientSession, proxy: str) -> str:
                                               "not available in your country",
                                               "choose your region")):
                     return "失败(区域不可用)"
-                return "解锁"
+                m = re.search(r'"countryCode"\s*:\s*"([A-Z]{2})"', text)
+                if m:
+                    return f"解锁({m.group(1)})"
+                return "可用"  # v4.43.0：200 无地区标识 → 仅"可用"，不裸判解锁
             elif resp.status == 403:
                 return "封锁"
             return f"({resp.status})"
@@ -326,6 +333,46 @@ async def check_perplexity(session: aiohttp.ClientSession, proxy: str) -> str:
     return "未知" if res == "封锁" else res
 
 
+async def check_gemini(session: aiohttp.ClientSession, proxy: str) -> str:
+    """检测 Gemini（v4.43.0 新增专用检测器；网页 gemini.google.com 对数据中心 IP +
+    非浏览器 TLS 走 Google 风控，改用 API 端点判别）
+
+    Google 的 generativelanguage API 对无效 key 通常统一返回 400（"API key not valid"），
+    仅凭状态码无法区分"key 无效"与"区域不支持"。故读错误体：
+      - 403：区域封锁（Google 以 403 拒绝）
+      - 400/401 且错误信息含 区域不支持关键词（location/not supported/unsupported
+        country/PERMISSION_DENIED）→ 封锁
+      - 其余任何已到达（400/401/429/5xx，key 无效但无区域提示）→ 可用
+    （比 check_claude/check_perplexity 更保守：读错误体，降低"区域不支持误报可用"风险）
+    """
+    try:
+        async with session.get(
+                "https://generativelanguage.googleapis.com/v1beta/models",
+                proxy=proxy,
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+                params={"key": "x"},  # 无效 key，仅用于探测是否到达 API
+                timeout=aiohttp.ClientTimeout(total=STREAMING_TEST_TIMEOUT),
+                allow_redirects=False) as r:
+            if r.status == 403:
+                return "封锁"  # 不支持的区域（Google 以 403 拒绝）
+            # 读错误体，区分"key 无效"与"区域不支持"（Google 对无效 key 常统一 400）
+            try:
+                low = (await r.text()).lower()
+            except Exception:
+                low = ""
+            if any(k in low for k in ("location is not supported", "location not supported",
+                                      "unsupported location", "unsupported country",
+                                      "user location is not supported", "permission_denied")):
+                return "封锁"
+            return "可用"  # 已到达 Gemini API = 区域放行（400/401/429/5xx 等，无区域提示）
+    except Exception:
+        pass
+    # 兜底：通用网页探测。v4.43.0：gemini.google.com 网页受 Google 风控，
+    # 403 无法区分"区域封锁"与"机器人风控" → 判"封锁"降级为"未知"防误报
+    res = await check_generic(session, proxy, "https://gemini.google.com", "Gemini")
+    return "未知" if res == "封锁" else res
+
+
 async def check_generic(session: aiohttp.ClientSession, proxy: str, url: str, name: str) -> str:
     """通用检测（跟进重定向，最终 2xx/3xx 算可用；4xx/5xx 走 403 特判或按状态码返回）
 
@@ -378,60 +425,59 @@ async def check_generic(session: aiohttp.ClientSession, proxy: str, url: str, na
         return "错误(连接失败)"
 
 
-async def check_bilibili(session: aiohttp.ClientSession, proxy: str) -> str:
-    """检测 Bilibili 可访问性"""
-    try:
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-        async with session.get(
-            "https://www.bilibili.com",
-            proxy=proxy, headers=headers,
-            timeout=aiohttp.ClientTimeout(total=STREAMING_TEST_TIMEOUT),
-        ) as resp:
-            if resp.status == 200:
-                return "可用"
-            return f"({resp.status})"
-    except Exception as e:
-        return f"错误({type(e).__name__})"
-
-
 BILI_TW_EP_IDS = [268176, 268177, 268178, 268173]
 
 
 async def check_bilibili_tw(session: aiohttp.ClientSession, proxy: str) -> str:
-    """检测 B站港澳台解锁：TW-only 番剧 playurl 是否返回可播放流"""
+    """检测 B站港澳台解锁：TW-only 番剧 playurl 是否返回可播放流
+
+    v4.43.0（认真检查修正）：
+    1) 不再因单个 ep 非 200（412 瞬时风控/429 限流等）就放弃整节点——记录后继续尝试其余 ep，
+       避免"一个 ep 风控误判整节点失败"；用 http_err 计数，4 个全非 200 才归该类错误
+    2) 网络异常（连接超时/中断）不再吞成"失败"——改用 net_err 计数且继续尝试；
+       4 个全异常返回"错误(连接失败)"，与其它检测器口径一致，保证死节点预检生效
+    3) 判定优先级：解锁(港澳台) > 失败(区域限制) > 错误(连接失败/HTTP) > 失败
+    （准确性依赖 BILI_TW_EP_IDS 确实是"大陆不可播、港澳台可播"的番剧，需实测验证）
+    """
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "Referer": "https://www.bilibili.com",
         }
+        net_err = 0   # 网络异常计数（连接超时/中断）
+        http_err = 0  # 非 200 状态计数（412 风控/429 限流/5xx 等）
         for ep in BILI_TW_EP_IDS:
             try:
                 async with session.get(
                     f"https://api.bilibili.com/pgc/player/web/playurl?ep_id={ep}"
                     "&qn=0&otype=json&fnval=16&fourk=1&module=bangumi",
                     proxy=proxy, headers=headers,
-                    # v4.38.0：单 ep 缩短超时（total 8→5、connect 3），4 ep 串行最坏 32s→20s
-                    timeout=aiohttp.ClientTimeout(total=5, connect=3),
+                    timeout=aiohttp.ClientTimeout(total=5, connect=3),  # 单 ep 5s
                 ) as resp:
-                    # v4.27.0：非 200（412 风控等）归"错误"类 → 触发重试一次，
-                    # 旧实现 resp.json() 抛异常被吞 → 瞬时风控被永久判"失败"
                     if resp.status != 200:
-                        return f"错误(HTTP {resp.status})"
+                        http_err += 1
+                        continue  # 非 200：该 ep 取流失败，试下一个
                     data = await resp.json()
                 code = data.get("code", -1)
                 msg = str(data.get("message", ""))
-                # 按错误码判区域限制（-10403 为官方"区域限制"码；message 匹配仅作兜底）
-                if code == -10403:
-                    return "失败(区域限制)"
-                if "区域" in msg or "版权" in msg or "地区" in msg:
-                    return "失败(区域限制)"
                 if code == 0:
                     res = data.get("result") or {}
                     if res.get("durl") or res.get("dash"):
-                        return "解锁(港澳台)"
+                        return "解锁(港澳台)"  # 拿到播放流 = 港澳台可播，定论
+                    continue  # code==0 但无流（需登录/无权限/异常），试下一个
+                # 区域限制（-10403 官方码，message 兜底）
+                if code == -10403 or any(k in msg for k in ("区域", "版权", "地区")):
+                    return "失败(区域限制)"  # 明确区域限制，定论
+                # 其它错误码（-9xx/-4xx 风控/账号等）：非区域限制，试下一个
             except Exception:
+                net_err += 1
                 continue
-        return "失败"
+        # 遍历完仍无定论：区分原因
+        if http_err >= len(BILI_TW_EP_IDS):
+            return "错误(连接失败)"   # 4 个全非 200（多为风控/限流）→ 错误类
+        if net_err >= len(BILI_TW_EP_IDS):
+            return "错误(连接失败)"   # 4 个全网络异常 = 节点不可达/接口不可用
+        return "失败"  # 有响应但拿不到符合预期的流（如全部需登录/数据异常）
     except Exception as e:
         return f"错误({type(e).__name__})"
 
@@ -604,10 +650,10 @@ STREAMING_CHECKERS = {
     "chatgpt": check_chatgpt,
     "claude": check_claude,        # v4.33.0：api.anthropic.com 区域判别（网页被 CF 风控误杀）
     "perplexity": check_perplexity,  # v4.33.0：api.perplexity.ai 区域判别（同上）
+    "gemini": check_gemini,        # v4.43.0：generativelanguage.googleapis.com 区域判别（网页被 Google 风控）
     # v4.38.0：hbomax 复用 check_max（HBO Max 已并入 Max，hbomax.com 重定向 max.com，
     # 消除两列走不同判定路径导致的结果不一致）
     "hbomax": check_max,
-    "bilibili": check_bilibili,
     "bilibili_tw": check_bilibili_tw,
     "tiktok": check_tiktok,
     "spotify": check_spotify,
@@ -740,4 +786,4 @@ async def run_streaming_test(mihomo: MihomoEngine, nodes: list[ProxyNode],
             pass
         pbar.close()
 
-__all__ = ['check_youtube', '_extract_yt_region', 'check_netflix', 'check_disney', 'check_chatgpt', 'check_claude', 'check_perplexity', 'check_generic', 'check_bilibili', 'BILI_TW_EP_IDS', 'check_bilibili_tw', 'check_tiktok', 'check_spotify', 'check_steam', 'check_primevideo', 'check_max', 'STREAMING_CHECKERS', 'check_one_node_streaming', '_log_streaming_details', 'run_streaming_test']
+__all__ = ['check_youtube', '_extract_yt_region', 'check_netflix', 'check_disney', 'check_chatgpt', 'check_claude', 'check_perplexity', 'check_generic', 'BILI_TW_EP_IDS', 'check_bilibili_tw', 'check_gemini', 'check_tiktok', 'check_spotify', 'check_steam', 'check_primevideo', 'check_max', 'STREAMING_CHECKERS', 'check_one_node_streaming', '_log_streaming_details', 'run_streaming_test']

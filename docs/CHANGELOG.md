@@ -8,6 +8,34 @@
 
 ---
 
+## v4.43.0
+
+MiaoKo 蓝绿冷色系视觉改版（替换 v4.32.0 红绿；`_get_speed_color`/`_bar_color`/`_bar_color_rel`/`_resample7`/`SPEED_RAMP_R2G`/`SPEED_NORM`/`SPEED_ADAPT_MAX` 等旧符号与旧接口保留供外部引用）
+
+### 新增
+- `config.MIAO_SPEED`（MiaoKo 蓝绿速度色板：慢=浅绿 `#B9E67D` → 中=蓝 → 快=深蓝 `#0D9AF2`）；`config.MIAO_SPEED_REF`（速度评分参考上限 25MB/s，log2 映射）
+- `config.REPORT_TITLE_BG`（标题栏/页脚浅灰 `#EBEBEB`）
+- `report._resample_n(arr, k)`（任意长度每秒数组重采样为任意点数，供每秒柱 10 根用；`_resample7` 保留）
+- `streaming.check_gemini`（Gemini 专用检测器）：`https://generativelanguage.googleapis.com/v1beta/models` 带无效 key；读错误体区分"key 无效"与"区域不支持"——403=区域封锁、400/401 含 location/not supported/unsupported country/PERMISSION_DENIED → 封锁、其余已到达（400/401/429/5xx 无区域提示）=可用；网页 gemini.google.com 兜底判"封锁"降级"未知"防误报
+
+### 修改
+- 报告整体版式色（`config`）：`REPORT_PAGE_BG`/`REPORT_HEADER_BG` 改纯白 `#FFFFFF`、`REPORT_GRID` 改列间淡竖线 `#E6E6E6`、`REPORT_OUTER` 改浅灰细外框 `#C8C8C8`、`REPORT_ZEBRA` 改双档纯白（去斑马）、`REPORT_SPECIAL_BG` 改浅灰 `#E9E9E9`；`REUSE_COLORS` 不变（深红/深黄/深青）
+- `LATENCY_RAMP` 改 MiaoKo：快=亮绿 `#4DD06F` → 中=黄绿 `#8BC34A` → 慢=深橙 `#FF7000`（替换原红系 `#1E9650`→`#D2321E`）
+- `STREAMING_STATUS_COLORS`/`IP_TYPE_COLORS` 改柔和色：解锁浅绿 `#B9E67D`、待解锁/自制柔和黄 `#E0BD54`、失败/封锁柔粉 `#EE6A75`、N/A/查询失败中灰 `#B0B0B0`、未知 `#96989E`、跳过 `#9E9E9E`
+- `report.generate_report_image` 布局：标题栏/页脚浅灰底 + 表头纯白（下加一条淡分隔线）、数据区纯白、列间淡竖线（数据行间不画横线）、浅灰细外框、页脚首行加绿勾「已核实TLS证书」（quick 模式仍为「快速模式（并行近似测速）」）、订阅分组横条改 `#EBEBEB` 浅灰
+- `report._speed_color` 改 MiaoKo 评分：`p=log2(1+v)/log2(1+25)`（固定参考上限 MIAO_SPEED_REF，旧 `report_max` 参数保留不再参与映射；慢=浅绿→快=深蓝）
+- `report._stream_block_color` 补归类：「仅自制剧」→pending（柔和黄）、「查询失败」→na（中灰）
+- 每秒速度柱：恒 7 根 → 约 10 根；柱高由「行内 min-max 起伏形状」改为「该秒绝对速度/全表最大归一化」（底部对齐，反映真实快慢）；柱色=绝对速度（蓝绿色板）
+- `streaming.check_bilibili_tw` 判定修正：不再因单 ep 非 200（412 瞬时风控/429 限流）就放弃整节点（用 http_err 计数、继续尝试其余 ep）；网络异常（连接超时/中断）不再吞成"失败"，4 个全异常返回"错误(连接失败)"（与其它检测器口径一致、保证死节点预检生效）；判定优先级：解锁(港澳台) > 失败(区域限制) > 错误(连接失败/HTTP) > 失败
+- 菜单文本：一级"快速检测"、二级"结果对比"/"订阅分组对比"、三级"清理旧报告"去掉遗留的"(开发中)"标注（功能 v4.30/v4.31 已启用，仅 UI 文本未同步）
+- `streaming.check_disney` 对齐 check_max：200 有 countryCode → 解锁(region)；200 无地区标识降"可用"（此前 200 直接"解锁"，把"区域可达但无地区标识"误当解锁）
+
+### 修复
+- （无）
+
+### 移除
+- `streaming.check_bilibili`（B站大陆可访问性检测）：已定义但从未接入任何流媒体服务列表（FULL_STREAMING_SERVICES 只有 bilibili_tw），为孤立死代码；随 `STREAMING_CHECKERS["bilibili"]`、`streaming.__all__`、`speed_test.__all__` 一并移除
+
 ## v4.42.0
 
 ### 新增
