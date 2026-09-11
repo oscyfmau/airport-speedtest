@@ -170,6 +170,17 @@ def streaming_color(status):
     return (255, 255, 255)
 
 
+def _streaming_block(status):
+    """流媒体单元格底色；空 / 未测 / `--` 返回 None（不填色，保留行底色）
+
+    v4.44.0：旧写法对空值返回纯白 (255,255,255)，而行底色是 #FCFCFC/#F8F8F8，
+    于是“未实测”的格子成了纯白亮块，看起来像图被截断。
+    """
+    if not status or status == "--":
+        return None
+    return streaming_color(status)
+
+
 def sparkline_color_red(mb, brightness=1.0):
     """每秒速度柱颜色（下载表红粉）"""
     if mb is None or mb <= 0:
@@ -331,7 +342,7 @@ def draw_sparkline(
         if v <= 0:
             continue
         ratio = min(v / max_val, 1.0)
-        bar_h = max(2, int(ratio * h))
+        bar_h = max(3, int(ratio * h))
         bx = x + gap + i * bar_w
         by = y + h - bar_h
         col = color_fn(v, brightness=0.6 + rng.random() * 0.6)
@@ -655,8 +666,12 @@ def draw_streaming_table(
             elif ctype == "streaming":
                 key = col["key"]
                 text = (row.get("streaming") or {}).get(key, "")
-                cell_bg = streaming_color(text)
-                text = _trunc_to_width(text, cw - 8, font)
+                block = _streaming_block(text)
+                if block:
+                    cell_bg = block
+                # v4.44.0：传 cw（函数内部自留 16px 边距）；旧写法传 cw-8 又减一次，
+                # 把本该完整显示的“解锁(US)”这类文本提前加了省略号
+                text = _trunc_to_width(text, cw, font)
             elif ctype == "ip_type":
                 text = row.get("ip_type", "")
                 block = row.get("ip_type_bg")
@@ -673,7 +688,7 @@ def draw_streaming_table(
                 if block:
                     cell_bg = block
             elif ctype == "asn":
-                text = _trunc_to_width(row.get("asn", ""), cw - 8, font)
+                text = _trunc_to_width(row.get("asn", ""), cw, font)
             elif ctype == "udp_type":
                 text = row.get("udp_type", "")
             elif ctype == "text":
@@ -719,6 +734,18 @@ def draw_streaming_table(
 # ─────────────────────── TestResult 适配层 ───────────────────────
 
 
+def _avg_speed_text(r):
+    """平均速度单元格文本（v4.28.0 口径：无速度时如实显示失败原因）"""
+    if r.speed is not None:
+        return _fmt_mb(r.speed)
+    return _trunc_width(r.error, 10) if r.error else "-"
+
+
+def _max_speed_text(r):
+    """最高速度单元格文本"""
+    return _fmt_mb(r.max_speed if r.max_speed is not None else r.speed)
+
+
 def build_download_rows(results, name_width=None, font=None):
     """TestResult 列表 → 下载速度表 rows
 
@@ -735,12 +762,8 @@ def build_download_rows(results, name_width=None, font=None):
             "type": _type_abb(r.node.type),
             "https_delay": _fmt_ms(r.http_latency),
             # v4.28.0：无速度数据时如实显示失败原因（节点不可达/下载失败/速度过低…）
-            "avg_speed": (
-                _fmt_mb(r.speed)
-                if r.speed is not None
-                else (_trunc_width(r.error, 10) if r.error else "-")
-            ),
-            "max_speed": _fmt_mb(r.max_speed if r.max_speed is not None else r.speed),
+            "avg_speed": _avg_speed_text(r),
+            "max_speed": _max_speed_text(r),
             "spark": [
                 s
                 for s in (r.speed_per_sec or [])
@@ -866,8 +889,9 @@ def _reuse_color(ip_info):
 
     v4.44.0：复用列在委托渲染后曾整列丢失，这里补回（仅在有复用数据时建列）。
     """
+    reuse = (ip_info or {}).get("reuse")
     key = {"完全复用": "full", "中转复用": "relay", "落地复用": "landing"}.get(
-        (ip_info or {}).get("reuse")
+        str(reuse) if reuse else ""
     )
     return REUSE_COLORS.get(key) if key else None
 
@@ -972,11 +996,11 @@ def build_streaming_columns(results, include_speed=True, font_size=14):
     font = load_font(font_size)
     pad = 16
 
-    def cw(title, values):
+    def cw(title, values, cap=220):
         w = _measure(title, font)
         for v in values:
             w = max(w, _measure(v if v else "", font))
-        return max(40, min(220, w + pad))
+        return max(40, min(cap, w + pad))
 
     names = [_flag_to_text(r.node.name) for r in results]
     name_w = cw("节点名称", names)
@@ -991,7 +1015,9 @@ def build_streaming_columns(results, include_speed=True, font_size=14):
         },
         {
             "name": "TLS RTT",
-            "width": cw("TLS RTT", [_fmt_ms(r.tcp_ping) for r in results]),
+            # v4.44.0：按**实际单元格文本**（含“(1丢)”后缀）量宽，旧写法用 _fmt_ms 量，
+            # 导致带丢包后缀的节点文字被硬裁切
+            "width": cw("TLS RTT", [_ping_text(r) for r in results]),
             "type": "tls_rtt",
         },
         {
@@ -1004,17 +1030,15 @@ def build_streaming_columns(results, include_speed=True, font_size=14):
         cols += [
             {
                 "name": "平均速度",
-                "width": cw("平均速度", [_fmt_mb(r.speed) for r in results]),
+                # v4.44.0：同样按实际单元格文本量宽（无速度时显示的是失败原因，可能更长）
+                "width": cw("平均速度", [_avg_speed_text(r) for r in results]),
                 "type": "avg_speed",
             },
             {
                 "name": "最高速度",
                 "width": cw(
                     "最高速度",
-                    [
-                        _fmt_mb(r.max_speed if r.max_speed is not None else r.speed)
-                        for r in results
-                    ],
+                    [_max_speed_text(r) for r in results],
                 ),
                 "type": "max_speed",
             },
@@ -1052,7 +1076,8 @@ def build_streaming_columns(results, include_speed=True, font_size=14):
         cols.append(
             {
                 "name": "ASN",
-                "width": cw("ASN", [_asn_text(r.ip_info) for r in results]),
+                # ASN 列单词较长（AS45102 + org），列宽上限放宽到 260，减少密集省略号
+                "width": cw("ASN", [_asn_text(r.ip_info) for r in results], cap=260),
                 "type": "asn",
             }
         )
@@ -1108,12 +1133,13 @@ def _with_group_markers(rows, results):
         return rows
     out = []
     for si in subs:
-        grp = [row for row, r in zip(rows, results) if r.node.sub_index == si]
+        # 不用 zip（避免 strict= 提示——项目声明支持 Python 3.9）
+        grp = [rows[i] for i, r in enumerate(results) if r.node.sub_index == si]
         if not grp:
             continue
         out.append({"_group": f"订阅 {si + 1}（{len(grp)} 节点）"})
         out.extend(grp)
-    rest = [row for row, r in zip(rows, results) if r.node.sub_index is None]
+    rest = [rows[i] for i, r in enumerate(results) if r.node.sub_index is None]
     if rest:
         out.append({"_group": f"未知订阅（{len(rest)} 节点）"})
         out.extend(rest)
@@ -1210,6 +1236,7 @@ __all__ = [
     "speed_color_red",
     "speed_color_blue",
     "streaming_color",
+    "_streaming_block",
     "sparkline_color_red",
     "sparkline_color_blue",
     "parse_speed",
