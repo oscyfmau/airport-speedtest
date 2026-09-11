@@ -166,7 +166,9 @@ def streaming_color(status):
     if "解锁" in s or "可用" in s or "自制" in s:
         return (192, 242, 140)
     if "跳过" in s:
-        return (200, 200, 200)
+        # v4.44.0：与 config.STREAMING_STATUS_COLORS["skip"] 同色（原来硬编码 (200,200,200)，
+        # 与“无数据”灰同色，区分不出“跳过未测”与“没有数据”）
+        return STREAMING_STATUS_COLORS["skip"]
     return (255, 255, 255)
 
 
@@ -178,7 +180,10 @@ def _streaming_block(status):
     """
     if not status or status == "--":
         return None
-    return streaming_color(status)
+    block = streaming_color(status)
+    # streaming_color 对“未归类的状态串”仍会兜底返回纯白；纯白 = 不填色，
+    # 否则一旦出现新状态词（如“限流”）就会重新画出白块（同 5-1 类回归）
+    return None if block == (255, 255, 255) else block
 
 
 def sparkline_color_red(mb, brightness=1.0):
