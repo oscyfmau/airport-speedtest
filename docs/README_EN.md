@@ -9,7 +9,7 @@ Pull all nodes from an airport subscription, test latency, speed, streaming unlo
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Downloads](https://img.shields.io/github/downloads/oscyfmau/airport-speedtest/total?style=flat-square)](https://github.com/oscyfmau/airport-speedtest/releases)
 
-Version: v4.43.0 | Repository: [github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) | [Changelog](CHANGELOG.md)
+Version: v4.44.0 | Repository: [github.com/oscyfmau/airport-speedtest](https://github.com/oscyfmau/airport-speedtest) | [Changelog](CHANGELOG.md)
 
 > This project was written by AI and developed for personal needs — take it as-is.
 
@@ -21,7 +21,7 @@ Version: v4.43.0 | Repository: [github.com/oscyfmau/airport-speedtest](https://g
 
 ## Quick Start (3 Steps, No Command Line Skills Needed)
 
-1. **Download**: open the [Releases page](https://github.com/oscyfmau/airport-speedtest/releases), download the latest `airport-speedtest-v4.42.0.zip` (a slim package with everything needed to run), unzip it, then read `使用教程.txt` inside first (if you know git you can also `git clone`)
+1. **Download**: open the [Releases page](https://github.com/oscyfmau/airport-speedtest/releases), download the latest `airport-speedtest-v4.44.0.zip` (a slim package with everything needed to run), unzip it, then read `使用教程.txt` inside first (if you know git you can also `git clone`)
 2. **Fill in the subscription**: in the unzipped folder, copy `代理.txt.example`, rename it to `代理.txt`, open it with Notepad, paste your subscription link and save
    - What is a subscription link? A URL provided by your airport service provider (usually starts with `https://` and contains all node info); get it from the "Copy subscription" option on the airport website or in the client app
 3. **Run**:
@@ -49,7 +49,7 @@ The mihomo core downloads automatically on first run to `bin/` (about 47MB) — 
 - Retest mechanism: timed-out nodes are retested before the report; recovered nodes get a re-run speed test
 - Output: PNG visual report (full-cell color blocks + per-second speed bars + white grid lines) + JSON data + JSONL structured logs (subscription tokens auto-masked)
 - Console experience: per-UA feedback while parsing the subscription, real-time per-node result lines during speed tests, per-stage summaries, and a TOP-5 console ranking at the end (results visible even without opening the PNG); progress bars disappear after each stage without residue
-- Menu management: filtered speed tests (by node-name keywords / first N nodes), history management (open/delete reports), subscription management (masked view/add/delete), settings page (speed window / parallelism / auto-open report, persisted across sessions), environment info page
+- Menu management: filtered speed tests (by node-name keywords / first N nodes), history management (open/delete reports), subscription management (masked view/add/delete), settings page (speed window / parallelism / auto-open report / stability window / large-run confirm / keep reports / keep logs days, persisted across sessions), environment info page
 
 ## Installation & Running
 
@@ -65,7 +65,7 @@ The mihomo core downloads automatically on first run to `bin/` (about 47MB) — 
 
 Either of the two ways:
 
-- No git: go to the [Releases page](https://github.com/oscyfmau/airport-speedtest/releases), download the latest `airport-speedtest-v4.42.0.zip` (slim package, run core files only) and unzip it; download `Source code (zip)` instead only if you want to modify the code
+- No git: go to the [Releases page](https://github.com/oscyfmau/airport-speedtest/releases), download the latest `airport-speedtest-v4.44.0.zip` (slim package, run core files only) and unzip it; download `Source code (zip)` instead only if you want to modify the code
 - With git:
 
 ```bash
@@ -84,6 +84,7 @@ Double-click `run.bat` for the interactive menu, or run directly from the comman
 | `python core/speed_test.py <URL>` | Direct speed test (simple mode: TCP ping + HTTP speed) |
 | `python core/speed_test.py <URL> --full` | Full test (+ streaming unlock + IP quality + web page simulation) |
 | `python core/speed_test.py <URL> --fast` | Fast mode (5s speed window / skip IP check) |
+| `python core/speed_test.py <URL> --quick` | Quick check (parallel approximate speed test + 4 core streaming services, ~10MB per node) |
 | `python core/speed_test.py <URL> --workers N` | Streaming/IP/webpage parallelism (1-8, default 4; speed tests always serial) |
 | `python core/speed_test.py -i file.txt` | Read multiple subscription URLs from a file (one per line) |
 | `python core/speed_test.py --report` | Open the last report |
@@ -171,17 +172,19 @@ Subscription URL(s) (captures subscription-userinfo) → parse with multiple UA 
 
 The report colors follow intuition (green/blue = fast/good, orange/pink = slow/bad). All text is drawn in pure black with no outline, and no color legend is printed inside the report; full-cell color blocks express quality, numbers are only for precise reading.
 
-### Color Meaning (v4.43.0 MiaoKo Blue-green style)
+### Color Meaning (v4.44.0 MiaoKo renderer: red-pink download table + blue-green streaming table)
 
 | Column | Color block |
 |---|---|
-| RTT / HTTP latency / Web Avg | Full-cell block: fast = bright green `#4DD06F` → mid = yellow-green `#8BC34A` → slow = deep orange `#FF7000` (linear interpolation between keyframes); `Timeout`/`--`/`UDP`/`Proxy reachable` get a light-gray block `#E9E9E9` |
-| Avg / Max speed | Full-cell block (MiaoKo blue-green cool scheme): slow = light green `#B9E67D` → mid = blue → fast = deep blue `#0D9AF2`; scored per-node by a log2 mapping (reference cap 25MB/s, above which it is the deepest blue; the high-speed band is gentle so overall contrast is small); nodes without speed show the failure reason (white background, black text) |
-| Streaming | Unlocked/Available = light green, Pending/Originals-only = soft yellow, Failed/Blocked/Connection failed = soft pink, N/A/Query failed = mid gray, Unknown = gray, Skipped (node unreachable) = dark gray, untested = no fill |
-| IP type | Residential/Mobile = light green, Business/DC = soft yellow, Proxy/VPN/Tor = soft pink |
+| HTTPS latency | Full-cell block (shared by both tables): fast = bright green `(70,200,80)` → yellow-green/yellow → orange → slow = red `(220,45,15)` (keyframes at 200/400/650/900/1200/1600ms); `-` (no data) gets a gray block `(200,200,200)` |
+| TLS RTT (streaming table) | Full-cell block: fast = bright green `(60,230,60)` → yellow → orange → slow = red `(220,40,15)` (keyframes at 80/120/180/250/350/500ms); `UDP`/`Proxy reachable`/`Timeout` carry no ms value → no fill |
+| Avg / Max speed (download table) | Full-cell block (red-pink scheme): light cyan `(187,216,217)` → light blue/blue-gray/lavender → purple → pink → magenta `(245,35,118)`; keyframes 1/5/10/15/22/32/45/65MB/s (cool colors up to ~10MB/s, turns pink above 22MB/s); nodes without speed show the failure reason (white background, black text) |
+| Avg / Max speed (streaming table) | Full-cell block (blue-green scheme): light cyan `(200,235,250)` → bright blue → deep blue `(30,140,230)`; keyframes 1/5/10/20/40/70MB/s |
+| Streaming | Unlocked/Available = light green, Pending/Originals-only = soft yellow, Failed/Blocked/Connection failed = soft pink, N/A/Query failed = mid gray, Unknown = gray, Skipped (node unreachable) = dark gray, untested = no fill; a bare status code `(NNN)` is colored as “unknown” |
+| IP type | Residential/Mobile = light green, Business/DC = soft yellow, Proxy/VPN/Tor = soft pink; no fill when the risk fields are all empty (the source provides no risk data) |
 | IP risk | Low (<20) = light green, Medium (20-59) = soft yellow, High (60+) = soft pink |
-| Reuse | Full reuse = deep red, Transit reuse = deep yellow, Exit reuse = deep cyan |
-| Per-second bars | About 10 bars in a tight row (any sampling length is resampled to 10 points); bar height = that second's absolute speed / report max (bottom-aligned, reflects real speed), bar color = absolute speed (same blue-green ramp as the speed cells, comparable across rows); nodes without per-second data show 10 short bars of equal height |
+| Reuse | Full reuse = deep red, Transit reuse = deep yellow, Exit reuse = deep cyan (column is added only when reuse data exists) |
+| Per-second bars | 10 bars (any sampling length is resampled to 10 points); bar height = that second’s speed / global max instantaneous speed (bottom-aligned, reflects real speed); bar color follows absolute speed (pink ramp in the download table, blue ramp in the streaming table, comparable across rows); rows without per-second data draw no bars and that cell uses the same gray as the neighbouring speed cells |
 
 ### Latency & Reachability Column
 
@@ -326,7 +329,7 @@ The mihomo core is downloaded from GitHub (~47MB) and may fail on some networks.
 - IP quality detection depends on free APIs: ip-api.com is the primary source (free tier is HTTP-only, provides hosting/proxy/mobile flags plus ASN/ISP; verified reachable through airport exits; rate-limited to 45 requests/min per exit IP); ipapi.is is a fallback (provides datacenter/proxy/VPN/Tor/abuser flags plus ASN, but is observed to block most airport exit IPs); ipwho.is / api.ip.sb are the last fallbacks (free tier provides only geo and ASN — no risk-control fields, type/risk shown as `--`); the risk score is a local heuristic (0-100: datacenter+20/proxy+25/VPN+20/Tor+35/abuser+25/crawler+10), not a third-party fraud score; IP type shows five levels: Tor exit / proxy-VPN / datacenter / mobile network / residential
 - Without IPv6 on the local machine, IPv6 nodes will inevitably fail to test (the tool probes and marks them as much as possible; this is an environment limitation)
 - The report shows at most the first 300 nodes
-- The YouTube download source is hidden by default (`YOUTUBE_SOURCE_ENABLED = False` in `core/speed_test.py`); set it to `True` and install yt-dlp to enable the 4th speed-test source (googlevideo direct link)
+- The YouTube download source is hidden by default (`YOUTUBE_SOURCE_ENABLED = False` in `core/config.py`); set it to `True` and install yt-dlp to enable the 4th speed-test source (googlevideo direct link)
 - Speed tests consume node traffic (about 10-30MB per node); be cautious about running full tests on "no heavy traffic" nodes
 - Web page simulation adds about 3-8 seconds per node in standard/full tests (4 sites concurrently, 8s timeout); skipped in `--fast` mode
 - shadowtls/naive/juicity nodes are parsed but filtered out (not supported by mihomo; prevents a single unsupported type from breaking the whole config), so they never enter the test pipeline (documented since v4.39.0)

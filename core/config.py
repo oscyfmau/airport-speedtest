@@ -3,7 +3,7 @@
 """配置与常量（单一数据源；v4.10 起为真定义模块）"""
 import os
 
-VERSION = "4.43.0"  # SemVer：主版本.次版本.修订号（v4.43.0 MiaoKo 蓝绿视觉改版）
+VERSION = "4.44.0"  # SemVer：主版本.次版本.修订号（v4.44.0 MiaoKo 渲染器独立模块 + 审查缺陷修复）
 
 
 # 产物累积清理默认值（v4.31.0，core/profiles.cleanup_outputs；settings 持久化可覆盖）

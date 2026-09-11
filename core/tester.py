@@ -63,6 +63,21 @@ async def test_node_speed(mihomo, node: ProxyNode) -> tuple:
             t_first = None
             aborted_slow = False
             finished = asyncio.Event()
+            watchdog_fired = False   # v4.44.0：窗口看门狗是否兜底关窗
+            watchdogs = []           # v4.44.0：看门狗任务句柄（首字节到达后才创建）
+
+            async def _window_watchdog():
+                """v4.44.0：窗口看门狗——首字节到达后即使再无任何数据（链路黑洞：无 RST、无 chunk），
+                也在 window_secs 后关闭窗口，不再白等 HTTP_DOWNLOAD_TIMEOUT(30s)；
+                首字节始终未到达时不启动（那种情况仍按总超时处理，语义不变）"""
+                nonlocal watchdog_fired
+                await asyncio.sleep(window_secs)
+                watchdog_fired = True
+                finished.set()
+                logger.debug("窗口看门狗触发（首字节后 %.1fs 窗口届满）: %s",
+                             window_secs, node.name,
+                             extra=_ev("speed_window_watchdog",
+                                       {"node": node.name, "downloaded_bytes": downloaded}))
 
             async def download_one(i: int):
                 """单路下载任务：连接 i 取第 i % len(urls) 个源"""
@@ -84,6 +99,7 @@ async def test_node_speed(mihomo, node: ProxyNode) -> tuple:
                                 return
                             if t_first is None:
                                 t_first = time.monotonic()
+                                watchdogs.append(asyncio.ensure_future(_window_watchdog()))
                             elapsed = time.monotonic() - t_first
                             if elapsed >= window_secs:
                                 finished.set()  # 窗口已满
@@ -136,10 +152,15 @@ async def test_node_speed(mihomo, node: ProxyNode) -> tuple:
                     pass
             if not window_waiter.done():
                 window_waiter.cancel()
+            for wd in watchdogs:  # v4.44.0：看门狗只负责关窗，收尾时统一取消
+                if not wd.done():
+                    wd.cancel()
 
             # 结果统计
             window_time = min(time.monotonic() - t_first, window_secs) if t_first is not None else 0.0
-            if aborted_slow:
+            # v4.44.0：看门狗兜底关窗（数据先吐一段后链路黑洞）且数据量不足 → 归因为“速度过低”，
+            # 与 SLOW_ABORT 语义一致；首字节未到达的情况不走这里（仍按超时报“下载失败”）
+            if aborted_slow or (watchdog_fired and downloaded < MIN_SPEED_BYTES):
                 error_note = "速度过低"
             elif downloaded >= MIN_SPEED_BYTES and window_time > 0:
                 # 每秒速度：完整秒槽按 1s 折算，末个不满 1 秒的槽按实际秒数折算

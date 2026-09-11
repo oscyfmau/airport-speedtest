@@ -102,6 +102,11 @@ def _ipapi_com_to_info(data: dict) -> dict:
     countryCode/city/isp/org/as/asname/proxy/hosting/mobile/query。
     风控标志 proxy（公共代理）/hosting（机房托管）/mobile（移动网络）。
     """
+    # v4.43.0 修复：保留/私有段等情况下 ip-api 返回 HTTP 200 + status=fail，
+    # 旧实现只要 query 非空就当成功 → 不回退到带风控字段的源、风险还按 0 分算
+    if str(data.get("status", "")).lower() == "fail":
+        return {"ip": "", "source": "ip-api.com",
+                "error": f"ip-api.com 拒绝查询: {data.get('message') or '未知原因'}"}
     as_txt = data.get("as", "")
     m = re.match(r"AS(\d+)", as_txt or "")
     info = {
@@ -239,8 +244,10 @@ async def check_ip_quality(session: aiohttp.ClientSession, proxy: str) -> dict:
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     last_err = ""
     for url, mapper in IP_SOURCES:
-        await _ip_bucket.acquire()  # 全局节流：防免费源 429 降级
         for attempt in range(2):  # 429/瞬时错误退避重试一次，避免误降级到无风控字段的回退源
+            # v4.43.0 修复：令牌按"请求"计费——每次真实请求（含重试）都取令牌，
+            # 旧实现把 acquire 放在源循环体内 → 同源重试不扣令牌，实发速率可达配置值 2 倍
+            await _ip_bucket.acquire()  # 全局节流：防免费源 429 降级
             try:
                 async with session.get(
                     url,
@@ -265,7 +272,8 @@ async def check_ip_quality(session: aiohttp.ClientSession, proxy: str) -> dict:
                     data = await resp.json()
                 info = mapper(data)
                 if not info.get("ip"):
-                    last_err = "响应无 IP 字段"
+                    # 映射函数可带上具体原因（如 ip-api status=fail），优先用它
+                    last_err = info.get("error") or "响应无 IP 字段"
                     logger.debug("IP 源 %s 响应无 IP 字段，换下一个源", url,
                                  extra=_ev("ip_source_attempt",
                                            {"source": url, "ok": False, "error": last_err}))

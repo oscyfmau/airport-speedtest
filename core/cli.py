@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """命令行入口：参数解析 / 交互菜单 / 内核更新"""
 import asyncio
 import atexit
@@ -46,10 +45,58 @@ def _open_report(path: str) -> bool:
 
 _MODE_NAMES = {"speed": "简单测速", "basic": "简单测速", "normal": "标准测试",
                "full": "完整测速", "streaming": "流媒体", "streaming_ai": "AI流媒体",
-               "streaming_all": "全部流媒体"}
+               "streaming_all": "全部流媒体", "quick": "快速检测"}
 
 # v4.29.0：文件名时间戳可能是秒级或带毫秒后缀（_mmm），剥掉尾部时间戳段取模式名
 _MODE_TAIL_RE = re.compile(r"_\d{8}_\d{6}(?:_\d+)?$")
+
+
+def _safe_mtime(path: str) -> float:
+    """文件修改时间（取不到返回 0）
+
+    v4.44.0：列表/取最新时用——文件在 listdir 之后被删掉或权限不足时
+    os.path.getmtime 抛 OSError，会让整个菜单崩掉（同函数里紧邻的
+    time.localtime(os.path.getmtime(...)) 本来就包了 try，这里补齐）。
+    """
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return 0.0
+
+
+def _read_text_auto(path: str) -> tuple:
+    """读文本文件，返回 (文本, 回写该用的编码)
+
+    v4.44.0：先整体读字节，再依次尝试 utf-8-sig → gbk（与
+    parser.read_subscribe_urls 一致）——中文 Windows 记事本默认 ANSI(GBK)
+    保存的 代理.txt 才能读写。返回编码供写回用：原文带 BOM 保留 utf-8-sig
+    （不丢 BOM），无 BOM 用 utf-8，GBK 文件仍按 GBK 写回、不悄悄改编码。
+    """
+    with open(path, "rb") as f:
+        raw = f.read()
+    for enc in ("utf-8-sig", "gbk"):
+        try:
+            text = raw.decode(enc)
+        except UnicodeDecodeError:
+            continue
+        if enc == "utf-8-sig":
+            return text, ("utf-8-sig" if raw.startswith(b"\xef\xbb\xbf") else "utf-8")
+        return text, "gbk"
+    return raw.decode("utf-8", errors="replace"), "utf-8"
+
+
+def _merge_urls(dst: list, src: list) -> list:
+    """把 src 里的订阅 URL 追加进 dst（去重保序）
+
+    v4.44.0：位置 URL 与 -i 文件内容统一走这里——旧实现是相互赋值覆盖，
+    后出现的来源会把先收集到的 URL 静默丢掉。
+    """
+    seen = set(dst)
+    for u in src:
+        if u not in seen:
+            seen.add(u)
+            dst.append(u)
+    return dst
 
 
 def _mode_from_basename(base: str) -> str:
@@ -68,7 +115,7 @@ def _last_run_line(last_result_path: str = "") -> str:
     if not target and os.path.exists(OUTPUT_DIR):
         pngs = [f for f in os.listdir(OUTPUT_DIR) if f.endswith(".png")]
         if pngs:
-            latest = max(pngs, key=lambda f: os.path.getmtime(os.path.join(OUTPUT_DIR, f)))
+            latest = max(pngs, key=lambda f: _safe_mtime(os.path.join(OUTPUT_DIR, f)))
             target = os.path.join(OUTPUT_DIR, latest)
     if not target:
         return "上次结果: 无"
@@ -96,7 +143,7 @@ def _list_reports(limit: int = 15) -> list:
         groups.setdefault(base, []).append(f)
     items = sorted(
         groups.items(),
-        key=lambda kv: os.path.getmtime(os.path.join(OUTPUT_DIR, kv[1][0])),
+        key=lambda kv: _safe_mtime(os.path.join(OUTPUT_DIR, kv[1][0])),
         reverse=True)
     return items[:limit]
 
@@ -105,23 +152,26 @@ def _append_subscribe_url(url: str) -> str:
     """把订阅 URL 追加到 代理.txt（去重/保持原换行风格与尾随换行状态），返回状态文本
 
     newline="" 读写：不做 \n→\r\n 翻译、不做通用换行归一，字节级保持原文件风格。
+    v4.44.0：读写改走 _read_text_auto（utf-8-sig → gbk 自动探测），写回沿用原编码
+    ——旧实现只按 utf-8-sig 读，中文 Windows 记事本默认 GBK 保存的 代理.txt
+    会直接失败（返回"失败: ..."），且追加会把 GBK 文件改写成 UTF-8。
     """
     try:
-        exists = os.path.exists(SUBSCRIBE_FILE)
-        if exists:
-            with open(SUBSCRIBE_FILE, "r", encoding="utf-8-sig", newline="") as fr:
-                raw = fr.read()
-            if url in [l.strip() for l in raw.splitlines() if l.strip()]:
-                return "该 URL 已在 代理.txt 中"
-            nl = "\r\n" if "\r\n" in raw else "\n"
-            ends = raw.endswith("\n") or raw.endswith("\r")
-            with open(SUBSCRIBE_FILE, "a", encoding="utf-8", newline="") as f:
-                if raw and not ends:
-                    f.write(nl)
-                f.write(url + (nl if (ends or not raw) else ""))
+        if not os.path.exists(SUBSCRIBE_FILE):
+            with open(SUBSCRIBE_FILE, "w", encoding="utf-8", newline="") as f:
+                f.write(url + "\n")
             return "已添加"
-        with open(SUBSCRIBE_FILE, "w", encoding="utf-8", newline="") as f:
-            f.write(url + "\n")
+        raw, enc = _read_text_auto(SUBSCRIBE_FILE)
+        if url in [l.strip() for l in raw.splitlines() if l.strip()]:
+            return "该 URL 已在 代理.txt 中"
+        nl = "\r\n" if "\r\n" in raw else "\n"
+        ends = raw.endswith("\n") or raw.endswith("\r")
+        # 追加模式用 utf-8（BOM 已在文件开头，避免中途再写一个 BOM）
+        append_enc = "utf-8" if enc == "utf-8-sig" else enc
+        with open(SUBSCRIBE_FILE, "a", encoding=append_enc, newline="") as f:
+            if raw and not ends:
+                f.write(nl)
+            f.write(url + (nl if (ends or not raw) else ""))
         return "已添加"
     except Exception as e:
         return f"失败: {_safe_exc_str(e)}"
@@ -315,7 +365,7 @@ def _menu_view_last(last_result_path: str) -> None:
     if not target and os.path.exists(OUTPUT_DIR):
         pngs = [f for f in os.listdir(OUTPUT_DIR) if f.endswith(".png")]
         if pngs:
-            latest = max(pngs, key=lambda f: os.path.getmtime(os.path.join(OUTPUT_DIR, f)))
+            latest = max(pngs, key=lambda f: _safe_mtime(os.path.join(OUTPUT_DIR, f)))
             target = os.path.join(OUTPUT_DIR, latest)
     if target:
         _open_report(target)
@@ -349,12 +399,22 @@ def _menu_manage_results() -> None:
                     if not (1 <= idx <= len(reports)):
                         raise IndexError  # v4.35.0：0/越界会命中负索引 reports[-1] 误删最旧报告
                     base, files = reports[idx - 1]
+                    failed = []
                     for f in files:
                         try:
                             os.remove(os.path.join(OUTPUT_DIR, f))
-                        except OSError:
-                            pass
-                    print(f"[OK] 已删除: {base}（{len(files)} 个文件）")
+                        except OSError as e:
+                            # v4.44.0：不再吞异常后照报"已删除"（文件被占用/只读时误导用户）
+                            failed.append((f, _safe_exc_str(e)))
+                    if failed:
+                        print(f"[警告] 已删除 {len(files) - len(failed)}/{len(files)} 个文件，"
+                              f"以下删除失败：")
+                        for f, why in failed:
+                            print(f"  - {f}: {why}")
+                        logger.warning("删除报告文件失败: %s",
+                                       "; ".join(f for f, _ in failed))
+                    else:
+                        print(f"[OK] 已删除: {base}（{len(files)} 个文件）")
                 else:
                     idx = int(act)
                     if not (1 <= idx <= len(reports)):
@@ -398,25 +458,37 @@ def _menu_manage_subs() -> None:
         elif act.startswith("D"):
             try:
                 idx = int(act[1:]) - 1
-                if 0 <= idx < len(urls):
-                    target = urls[idx]
-                    # 菜单显示行（非空非注释）→ 原始行号映射；逐行原样保留（newline=""）
-                    with open(SUBSCRIBE_FILE, "r", encoding="utf-8-sig", newline="") as fr:
-                        raw_lines = fr.readlines()
-                    clean_idx = [i for i, l in enumerate(raw_lines)
-                                 if l.strip() and not l.strip().startswith("#")]
-                    del_raw = clean_idx[idx]
-                    rest_lines = [l for i, l in enumerate(raw_lines) if i != del_raw]
-                    with open(SUBSCRIBE_FILE, "w", encoding="utf-8", newline="") as f:
-                        f.write("".join(rest_lines))
-                    print(f"[OK] 已删除第 {idx + 1} 条")
-                    logger.info("订阅 URL 已删除",
-                                extra=_ev("manual_subscribe_input",
-                                          {"url": _mask_url(target), "deleted": True}))
-                else:
-                    print("[错误] 编号超出范围")
-            except (ValueError, IndexError):
+            except ValueError:
                 print("[错误] 无效编号")
+                continue
+            if not (0 <= idx < len(urls)):
+                print("[错误] 编号超出范围")
+                continue
+            target = urls[idx]
+            try:
+                # v4.44.0：按「utf-8-sig → gbk」自动探测读、按原编码写回。旧实现只按
+                # utf-8-sig 读，GBK 文件抛的 UnicodeDecodeError 是 ValueError 子类，
+                # 被 except ValueError 吞掉后误报"无效编号"（真实原因被掩盖）
+                # 菜单显示行（非空非注释）→ 原始行号映射；逐行原样保留（newline=""）
+                raw_text, enc = _read_text_auto(SUBSCRIBE_FILE)
+                raw_lines = raw_text.splitlines(keepends=True)
+                clean_idx = [i for i, l in enumerate(raw_lines)
+                             if l.strip() and not l.strip().startswith("#")]
+                del_raw = clean_idx[idx]
+                rest_lines = [l for i, l in enumerate(raw_lines) if i != del_raw]
+                with open(SUBSCRIBE_FILE, "w", encoding=enc, newline="") as f:
+                    f.write("".join(rest_lines))
+            except IndexError:
+                print("[错误] 无效编号")
+                continue
+            except (OSError, UnicodeDecodeError, UnicodeEncodeError) as e:
+                print(f"[错误] 删除失败: {_safe_exc_str(e)}")
+                logger.warning("删除订阅 URL 失败: %s", _safe_exc_str(e))
+                continue
+            print(f"[OK] 已删除第 {idx + 1} 条")
+            logger.info("订阅 URL 已删除",
+                        extra=_ev("manual_subscribe_input",
+                                  {"url": _mask_url(target), "deleted": True}))
         else:
             print("[错误] 无效操作")
 
@@ -548,6 +620,7 @@ def _menu_update_kernel() -> None:
     elif target_ver:
         print(f"目标版本: {target_ver}")
     print("正在更新 mihomo 内核...")
+    tmp_dir = ""  # v4.44.0：提到 try 外——旧实现在异常路径（下载/解压抛错）漏删临时目录（约 47MB）
     try:
         tmp_dir = tempfile.mkdtemp(prefix="mihomo_update_")
         binary = MihomoEngine._download_mihomo(target_dir=tmp_dir)
@@ -580,11 +653,13 @@ def _menu_update_kernel() -> None:
             logger.error("mihomo 更新失败（下载或解压失败）",
                          extra=_ev("mihomo_update", {"ok": False, "error": "download/unzip"}))
             print("[错误] 更新失败")
-        shutil.rmtree(tmp_dir, ignore_errors=True)
     except Exception as e:
         logger.error("mihomo 更新失败: %s", _safe_exc_str(e),
                      extra=_ev("mihomo_update", {"ok": False, "error": _safe_exc_str(e)[:200]}))
         print(f"[错误] 更新失败: {_safe_exc_str(e)}")
+    finally:
+        if tmp_dir:
+            shutil.rmtree(tmp_dir, ignore_errors=True)  # v4.44.0：成功/失败都清理临时目录
     input("\n按 Enter 返回菜单...")
 
 
@@ -663,11 +738,16 @@ def _menu_compare() -> None:
     parts = [p for p in inp.replace("，", ",").replace(" ", ",").split(",") if p]
     try:
         ia, ib = int(parts[0]) - 1, int(parts[1]) - 1
-        ra, rb = metas[ia], metas[ib]
     except (ValueError, IndexError):
         print("[错误] 编号无效")
         input("\n按 Enter 返回菜单...")
         return
+    if not (0 <= ia < len(metas) and 0 <= ib < len(metas)):
+        # v4.44.0：0/越界会命中负索引 metas[-1]（对比的其实是最后一条，用户不知情）
+        print("[错误] 编号无效")
+        input("\n按 Enter 返回菜单...")
+        return
+    ra, rb = metas[ia], metas[ib]
     res = run_compare_report(data, ra["run_id"], rb["run_id"])
     if res.get("error"):
         print(f"[错误] {res['error']}")
@@ -718,11 +798,17 @@ def _menu_group_report() -> None:
     run_id = ""
     if inp:
         try:
-            run_id = metas[int(inp) - 1]["run_id"]
-        except (ValueError, IndexError):
+            idx = int(inp) - 1
+        except ValueError:
             print("[错误] 编号无效")
             input("\n按 Enter 返回菜单...")
             return
+        if not (0 <= idx < len(metas)):
+            # v4.44.0：0/越界会命中负索引 metas[-1]（把最后一次 run 当选择结果用）
+            print("[错误] 编号无效")
+            input("\n按 Enter 返回菜单...")
+            return
+        run_id = metas[idx]["run_id"]
     res = subscription_group_report(data, run_id)
     if res.get("error"):
         print(f"[错误] {res['error']}")
@@ -792,7 +878,8 @@ async def async_main():
     # 直接传参模式
     show_menu_mode = False
     if args:
-        url = None
+        url = []  # v4.44.0：统一 list 语义（追加 + 去重），不再让 -i 与位置 URL 相互覆盖
+        url_source_given = False  # 显式给了订阅来源却一条都没解析出来时，明确提示而非静默进菜单
         mode = "basic"
         fast = False
         workers = DEFAULT_WORKERS
@@ -845,7 +932,7 @@ async def async_main():
                 if os.path.exists(OUTPUT_DIR):
                     pngs = [f for f in os.listdir(OUTPUT_DIR) if f.endswith(".png")]
                     if pngs:
-                        latest = max(pngs, key=lambda f: os.path.getmtime(os.path.join(OUTPUT_DIR, f)))
+                        latest = max(pngs, key=lambda f: _safe_mtime(os.path.join(OUTPUT_DIR, f)))
                         latest_path = os.path.join(OUTPUT_DIR, latest)
                         logger.info("打开最新报告: %s", latest_path)
                         _open_report(latest_path)
@@ -859,21 +946,20 @@ async def async_main():
                 break
             elif arg.startswith("http://") or arg.startswith("https://"):
                 # v4.39.0：多个位置 URL 合并解析（旧实现后一个静默覆盖前一个）
-                if url is None:
-                    url = arg
-                elif isinstance(url, str):
-                    logger.warning("检测到多个订阅 URL，合并解析")
-                    url = [url, arg]
-                else:
-                    url.append(arg)
+                # v4.44.0：与 -i 文件内容也合并（旧实现 `url = url_list` 直接覆盖）
+                if url or url_source_given:
+                    logger.warning("检测到多个订阅来源，合并解析")
+                url_source_given = True
+                _merge_urls(url, [arg])
             elif arg == "-i":
                 if i + 1 >= len(args):
                     logger.warning("-i 缺少文件参数")
                     continue
                 skip_next = i + 1
                 filepath = args[i + 1]
+                url_source_given = True
                 if os.path.exists(filepath):
-                    url_list = []
+                    found = []
                     # v4.36.0：先读字节再依次尝试 utf-8-sig → gbk——旧实现 try 只包 open()
                     # 不包迭代，UnicodeDecodeError 在 for line 时抛出，回退分支是死代码，
                     # GBK 文件会在迭代时未捕获崩溃
@@ -894,8 +980,16 @@ async def async_main():
                     for line in text.splitlines():
                         l = line.strip()
                         if l and not l.startswith("#"):
-                            url_list.append(l)
-                    url = url_list  # 支持多 URL 合并解析
+                            found.append(l)
+                    if found:
+                        if url:
+                            logger.warning("检测到多个订阅来源，合并解析")
+                        _merge_urls(url, found)  # v4.44.0：追加而非覆盖
+                    else:
+                        # v4.44.0：文件为空/全是注释 → 明确提示（旧实现让 url 变成 []，
+                        # 静默掉进交互菜单，用户以为正在测速）
+                        logger.warning("-i 文件未解析到可用 URL: %s", filepath)
+                        print(f"[警告] 文件未解析到可用订阅 URL: {filepath}")
                 else:
                     logger.error("文件不存在: %s", filepath)
             else:
@@ -905,6 +999,15 @@ async def async_main():
             if result and os.path.exists(result):
                 _open_report(result)
             return
+        if url_source_given and not show_menu_mode:
+            # v4.44.0：显式给了订阅来源却一条可用 URL 都没解析到 → 明确说明，不静默进菜单
+            # （show_menu 会清屏，先停一下让用户看清原因）
+            print("[错误] 未解析到可用的订阅 URL，已回到交互菜单")
+            logger.warning("未解析到可用的订阅 URL（位置参数/-i 文件为空或无有效行）")
+            try:
+                input("按 Enter 进入菜单...")
+            except (EOFError, KeyboardInterrupt):
+                pass
 
     # 交互菜单模式（v4.29.0 三级：main/more/maint；Ctrl+C 一次返回上级，一级两次退出）
     last_result_path = ""
@@ -1032,4 +1135,5 @@ def main():
 
 __all__ = ['_MODE_NAMES', '_last_run_line', '_list_reports', '_append_subscribe_url',
            '_select_subscribe_urls', '_current_settings_line', '_open_report',
+           '_safe_mtime', '_read_text_auto', '_merge_urls',
            'show_menu', 'async_main', 'main']

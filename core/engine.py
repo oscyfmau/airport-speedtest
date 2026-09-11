@@ -37,13 +37,21 @@ def _win_no_window_flags() -> int:
     return 0
 
 
+def _mask_log_text(text: str) -> str:
+    """v4.44.0：任意日志文本内的 URL/节点 URI 遮蔽（用于子进程 stderr 这类非异常文本）。
+    复用 utils._safe_exc_str 的同一套规则（其内部只对 str(e) 跑遮蔽正则），避免两处规则漂移。"""
+    return _safe_exc_str(RuntimeError(text))
+
+
 def _drain_stderr(proc: subprocess.Popen) -> None:
     """daemon 线程持续读取子进程 stderr 到 DEBUG 日志（v4.38.0：替代 DEVNULL 吞掉排障信息；
-    不读会让管道写满阻塞子进程，故必须起 drain）"""
+    不读会让管道写满阻塞子进程，故必须起 drain）
+    v4.44.0：stderr 原文统一过遮蔽（mihomo 配置报错可能把节点密码/UUID 打进 stderr）"""
     def _read():
         try:
             for line in proc.stderr:
-                logger.debug("mihomo stderr: %s", line.decode("utf-8", "replace").rstrip())
+                logger.debug("mihomo stderr: %s",
+                             _mask_log_text(line.decode("utf-8", "replace").rstrip()))
         except Exception:
             pass
     threading.Thread(target=_read, daemon=True, name="mihomo-stderr-drain").start()
@@ -214,7 +222,9 @@ class MihomoEngine:
                     return port
             except OSError:
                 continue
-        return start
+        # v4.44.0：端口段耗尽不再静默返回被占用的 start（否则只会报“mihomo 启动超时”）
+        logger.error("端口段耗尽: %d-%d 无可用端口", start, 59999)
+        return 0
 
     @staticmethod
     def _find_or_download() -> str:
@@ -373,7 +383,9 @@ class MihomoEngine:
             # v4.35.0：下载校验——mihomo 官方发布件不附带 .sha256 资产（2026-08 实测），
             # 存在同名 .sha256 校验文件时核验 SHA256；缺失时仅做压缩包完整性校验并 WARNING 提示
             try:
-                sha_resp = _requests.get(zip_path + ".sha256", timeout=15,
+                # v4.44.0：校验文件必须取远端 URL——此前误传本地落盘路径 zip_path，
+                # requests 抛 InvalidSchema 被下方 except 吞掉，校验分支实际从未生效
+                sha_resp = _requests.get(url + ".sha256", timeout=15,
                                          proxies=dict(DIRECT_PROXIES))  # v4.28.0：强制直连
                 if sha_resp.status_code == 200:
                     expected = sha_resp.text.strip().split()[0].lower()
@@ -390,7 +402,9 @@ class MihomoEngine:
                 else:
                     logger.warning("官方未提供 %s 校验文件，仅做压缩包完整性校验", fname + ".sha256")
             except Exception as e:
-                logger.warning("SHA256 校验不可用: %s", _safe_exc_str(e))
+                # v4.44.0：区分“取校验文件失败”与“官方未提供”（上游 404 走上面的 else 分支）
+                logger.warning("获取 %s 校验文件失败，仅做压缩包完整性校验: %s",
+                               fname + ".sha256", _safe_exc_str(e))
 
             # 解压：Windows 为 zip（校验 zip-slip + 完整性）；Linux/macOS 为单文件 gzip
             if ext == ".exe":
@@ -445,6 +459,13 @@ class MihomoEngine:
     def generate_config(self, nodes: list[ProxyNode]) -> str:
         """生成 Clash 配置文件"""
         config = _build_config_dict(nodes, self.mixed_port, self.api_port, self.secret)
+        # v4.44.0：start 换端口重试会再次调用本方法，先清理上一份临时配置（内含节点凭据），
+        # 避免旧文件失引用后残留在 TEMP 到下次启动清理；引擎仍在运行时（进程可能持有该文件）不动它
+        if self.config_path and self.process is None:
+            try:
+                os.remove(self.config_path)
+            except OSError:
+                pass
         # 写入临时文件
         fd, path = tempfile.mkstemp(suffix=".yaml", prefix="mihomo_")
         os.close(fd)
@@ -462,6 +483,11 @@ class MihomoEngine:
         """启动 mihomo 进程（v4.38.0：端口被占/瞬时失败时换端口重试一次）"""
         if not self.binary_path:
             raise RuntimeError("mihomo 二进制不存在")
+        if not self.mixed_port or not self.api_port:
+            # v4.44.0：端口段耗尽（_find_free_port 返回 0）→ 明确报错，不伪装成启动超时
+            logger.error("无可用端口（mixed=%s api=%s），无法启动 mihomo",
+                         self.mixed_port, self.api_port)
+            raise RuntimeError("无可用端口")
         if self.process and self._ready:
             return
         for attempt in range(2):
@@ -514,6 +540,11 @@ class MihomoEngine:
                 self._ready = False
                 self.mixed_port = MihomoEngine._find_free_port(7890)
                 self.api_port = MihomoEngine._find_free_port(19090, exclude={self.mixed_port})
+                if not self.mixed_port or not self.api_port:
+                    # v4.44.0：换端口后仍无可用端口 → 明确报错并停止重试
+                    logger.error("无可用端口（mixed=%s api=%s），换端口重试失败",
+                                 self.mixed_port, self.api_port)
+                    raise RuntimeError("无可用端口")
                 self.secret = secrets.token_hex(16)  # 新 secret，避免旧认证残留
                 if getattr(self, "_last_nodes", None) is not None:
                     self.generate_config(self._last_nodes)

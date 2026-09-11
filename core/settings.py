@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """用户设置：跨会话持久化（~/.airport_speedtest.json，JSON 格式）
 
 菜单 12 设置页读写；菜单模式运行测试时生效（窗口秒数/并行数/自动打开报告），
-命令行直跑保持默认行为不受影响。文件缺失/损坏自动回退默认值，不报错。
+命令行直跑保持默认行为不受影响。文件缺失回退默认值（不报错）；文件损坏回退默认值
+并写一条 warning（v4.44.0：旧实现静默 pass，用户改了设置"没生效"时查无依据）。
+写入走 tmp + os.replace 原子替换（v4.44.0）。
 """
 import json
 import os
+import time
+
+from .logging_setup import logger
+from .utils import _safe_exc_str
 
 SETTINGS_FILE = os.path.join(os.path.expanduser("~"), ".airport_speedtest.json")
 
@@ -70,24 +75,42 @@ def load_settings() -> dict:
     data = dict(DEFAULTS)
     try:
         if os.path.isfile(SETTINGS_FILE):
-            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+            with open(SETTINGS_FILE, encoding="utf-8") as f:
                 raw = json.load(f)
             if isinstance(raw, dict):
                 for k in DEFAULTS:
                     if k in raw:
                         data[k] = raw[k]
-    except Exception:
-        pass  # 损坏/权限问题：静默回退默认
+    except Exception as e:
+        # v4.44.0：损坏/权限问题仍回退默认，但明确提示一次（旧实现静默 pass，
+        # 用户改了设置"没生效"时查无依据）
+        logger.warning("设置文件读取失败，已回退默认值: %s (%s)",
+                       SETTINGS_FILE, _safe_exc_str(e))
     _clamp(data)
     _SETTINGS = data
     return _SETTINGS
 
 
 def save_settings(data: dict) -> None:
-    """保存设置（先钳制）并更新缓存"""
+    """保存设置（先钳制）并更新缓存
+
+    v4.44.0：tmp + os.replace 原子写（同 profiles.save_profiles）——旧实现直接
+    `open(..., "w")` 先截断再写，写一半失败（磁盘满/被强杀）会留下截断的 JSON，
+    下次读取整份设置丢失。tmp 名带 pid + 时间片，避免并发写同一临时文件。
+    """
     _clamp(data)
-    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    tmp = f"{SETTINGS_FILE}.{os.getpid()}.{int(time.monotonic() * 1000) % 1000:03d}.tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, SETTINGS_FILE)
+    except Exception:
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)  # 写失败清理临时文件，别在用户目录留垃圾
+        except OSError:
+            pass
+        raise
     global _SETTINGS
     _SETTINGS = data
 

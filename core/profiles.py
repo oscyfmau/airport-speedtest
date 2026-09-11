@@ -36,6 +36,30 @@ APPEAR_MAX = 20
 
 _NAME_STRIP_RE = re.compile(r"_\d+$")  # 去重后缀 _2/_3（_dedupe_nodes 生成）
 
+# v4.43.0 修复：流媒体结果值里属于"没测成"的前缀——不计入解锁率分母，
+# 解锁判定也先排除它们（旧实现 `"可用" in v` 把 "失败(区域不可用)" 算成了解锁）
+_UNDETECTED_PREFIXES = ("跳过", "错误")
+_NEGATIVE_PREFIXES = ("失败", "错误", "跳过", "未知", "封锁")
+
+
+def _countable_streaming(v) -> bool:
+    """该流媒体值是否算"实际检测过"（跳过/错误不计入分母，坏节点不稀释解锁率）"""
+    return isinstance(v, str) and not v.startswith(_UNDETECTED_PREFIXES)
+
+
+def _is_unlocked(v) -> bool:
+    """解锁判定（三处统一口径）：排除 失败/错误/跳过 等前缀后，再看 解锁/可用/成功
+
+    旧实现用子串 `"可用" in v`，会把 "失败(区域不可用)"（Disney/Max 文案）
+    误判成解锁；且 `"不可用"` 也含 `"可用"` 子串。
+    """
+    if not isinstance(v, str):
+        return False
+    s = v.strip()
+    if not s or s.startswith(_NEGATIVE_PREFIXES) or "不可用" in s:
+        return False
+    return ("解锁" in s) or ("可用" in s) or ("成功" in s)
+
 
 def _empty_data() -> dict:
     """空档案骨架"""
@@ -137,6 +161,7 @@ def rebuild_profiles() -> dict:
             quality = _quality_of(mode)
             run_id = _run_id_from_filename(os.path.basename(fp))
             ctx: dict = {}
+            seen_nids: set = set()  # 同轮重复映射同一档案时只归档一次（与 append_run 同口径）
             for entry in results:
                 node = ProxyNode(
                     name=entry.get("name") or "?",
@@ -149,6 +174,9 @@ def rebuild_profiles() -> dict:
                 nid = match_or_create(data, node, (entry.get("ip_info") or {}).get("ip") or "",
                                       ctx, first_seen=ts)
                 p = data["nodes"][nid]
+                if nid in seen_nids:
+                    continue  # 证据/出现次数每轮每档案只记一次
+                seen_nids.add(nid)
                 ev = _evidence_from_json(entry, quality, ts, mode)
                 _append_evidence(p, ev)
                 _trim_evidence(p)
@@ -187,10 +215,9 @@ def _evidence_from_json(entry: dict, quality: str, ts: str, mode: str) -> dict:
     if entry.get("tcp_probe") is not None:
         ev["tcp_probe"] = bool(entry["tcp_probe"])
     stream = entry.get("streaming") or {}
-    vals = [v for v in stream.values()
-            if isinstance(v, str) and not v.startswith("跳过")]
+    vals = [v for v in stream.values() if _countable_streaming(v)]
     if vals:
-        ev["unlock"] = sum(1 for v in vals if ("解锁" in v or "可用" in v or "成功" in v))
+        ev["unlock"] = sum(1 for v in vals if _is_unlocked(v))
         ev["unlock_total"] = len(vals)
     risk = (entry.get("ip_info") or {}).get("risk_score")
     if risk is not None:
@@ -245,8 +272,10 @@ def match_or_create(data: dict, node, ip: str = "", ctx: dict = None,
             "last_seen": "",
             "seen_count": 0,
             "evidence": [],
-            "fold": {"n": 0, "speed_sum": 0.0, "speed_ss": 0.0,
-                     "reach_n": 0, "unlock_sum": 0, "ts": ""},
+            # fold 计数（v4.43.0 修复）：speed_n=带速度维度的折叠条数、
+            # reach_total=带可达判定的折叠条数，作为 _weighted_stats 的分母
+            "fold": {"n": 0, "speed_sum": 0.0, "speed_ss": 0.0, "speed_n": 0,
+                     "reach_n": 0, "reach_total": 0, "unlock_sum": 0, "ts": ""},
             "appear": [],
         }
     return nid
@@ -263,10 +292,9 @@ def _build_evidence(r, quality: str, ts: str, display_mode: str,
         ev["tcp_ping"] = round(float(r.tcp_ping), 1)
     if r.tcp_probe is not None:
         ev["tcp_probe"] = bool(r.tcp_probe)
-    vals = [v for v in r.streaming.values()
-            if isinstance(v, str) and not v.startswith("跳过")]
+    vals = [v for v in r.streaming.values() if _countable_streaming(v)]
     if vals:
-        ev["unlock"] = sum(1 for v in vals if ("解锁" in v or "可用" in v or "成功" in v))
+        ev["unlock"] = sum(1 for v in vals if _is_unlocked(v))
         ev["unlock_total"] = len(vals)
     risk = (r.ip_info or {}).get("risk_score")
     if risk is not None:
@@ -288,16 +316,21 @@ def _trim_evidence(p: dict) -> None:
     evs = p["evidence"]
     if len(evs) <= EVIDENCE_MAX:
         return
-    fold = p.setdefault("fold", {"n": 0, "speed_sum": 0.0, "speed_ss": 0.0,
-                                 "reach_n": 0, "unlock_sum": 0, "ts": ""})
+    fold = p.setdefault("fold", {"n": 0, "speed_sum": 0.0, "speed_ss": 0.0, "speed_n": 0,
+                                 "reach_n": 0, "reach_total": 0, "unlock_sum": 0, "ts": ""})
     moved = evs[:len(evs) - EVIDENCE_MAX]
     for e in moved:
         fold["n"] += 1
         if e.get("speed") is not None:
             fold["speed_sum"] += e["speed"]
             fold["speed_ss"] += e["speed"] ** 2
-        if e.get("tcp_ping") is not None or e.get("tcp_probe") is True:
-            fold["reach_n"] += 1
+            # 只有带速度维度的折叠条目才进平均速度分母（旧实现用 fold["n"] → 系统性压低均值）
+            fold["speed_n"] = fold.get("speed_n", 0) + 1
+        if e.get("tcp_ping") is not None or e.get("tcp_probe") is not None:
+            # 有可达判定（含 tcp_probe=False 的"不可达"）才进可达率分母，与逐条路径同口径
+            fold["reach_total"] = fold.get("reach_total", 0) + 1
+            if e.get("tcp_ping") is not None or e.get("tcp_probe") is True:
+                fold["reach_n"] += 1
         if e.get("unlock") is not None:
             fold["unlock_sum"] += e["unlock"]
         fold["ts"] = e.get("ts") or fold["ts"]  # 折叠块最老时间戳（权重用）
@@ -315,6 +348,9 @@ def append_run(results: list, mode: str, display_mode: str, report_ts: str,
         ts = time.strftime("%Y-%m-%d %H:%M:%S")
         quality = _quality_of(mode)
         ctx: dict = {}
+        # v4.43.0 修复：同轮多节点可能映射到同一档案（入口相同/桥接），
+        # evidence/appear 每档案每轮只记一次，否则出现率可 >100%、证据条数虚高
+        seen_nids: set = set()
         for r in results:
             nid = match_or_create(data, r.node, (r.ip_info or {}).get("ip") or "", ctx)
             # 注册本轮入口→(档案, 落地IP)，供后续节点桥接
@@ -325,6 +361,9 @@ def append_run(results: list, mode: str, display_mode: str, report_ts: str,
                 p["names"].append(r.node.name)  # 改名追踪（含去重后缀名，保留原样）
             if r.node.sub_index is not None and r.node.sub_index not in p.get("subs", []):
                 p.setdefault("subs", []).append(r.node.sub_index)
+            if nid in seen_nids:
+                continue  # 身份元数据已合并，证据/出现次数不重复记
+            seen_nids.add(nid)
             ev = _build_evidence(r, quality, ts, display_mode, r.node.sub_index)
             _append_evidence(p, ev)
             _trim_evidence(p)
@@ -381,7 +420,8 @@ def _weighted_stats(p: dict):
         wf = 0.5 ** (age_fold / 3.0)
         w_s += fold["speed_sum"] * wf
         w_ss += fold["speed_ss"] * wf
-        w_t += fold_n * wf
+        # 分母只算"带速度维度"的折叠条数（旧档案无 speed_n → 退回 fold_n 保持兼容）
+        w_t += fold.get("speed_n", fold_n) * wf
     avg = (w_s / w_t) if w_t > 0 else None
     sigma = None
     if avg is not None and w_t > 0:
@@ -397,7 +437,8 @@ def _weighted_stats(p: dict):
         rr += w * reach
     if fold_n:
         wf = 0.5 ** (age_fold / 3.0)
-        rw += fold_n * wf
+        # 分母只算"带可达判定"的折叠条数（旧档案无 reach_total → 退回 fold_n 保持兼容）
+        rw += fold.get("reach_total", fold_n) * wf
         rr += fold["reach_n"] * wf
     reach_rate = (rr / rw) if rw > 0 else None
     return {"avg_speed": avg, "sigma": sigma, "reach_rate": reach_rate}
@@ -621,9 +662,9 @@ def subscription_group_report(data: dict, run_id: str = "") -> dict:
         if risk is not None:
             g["risks"].append(risk)
         vals = [v for v in (e.get("streaming") or {}).values()
-                if isinstance(v, str) and not v.startswith("跳过") and not v.startswith("错误")]
+                if _countable_streaming(v)]
         g["unlock_total"] += len(vals)
-        g["unlock"] += sum(1 for v in vals if "解锁" in v or "可用" in v)
+        g["unlock"] += sum(1 for v in vals if _is_unlocked(v))
     rows = []
     for k, g in groups.items():
         rows.append({
@@ -700,7 +741,8 @@ def cleanup_outputs(keep_reports: int = KEEP_REPORTS_DEFAULT,
             "freed_bytes": freed}
 
 
-__all__ = ['PROFILES_FILE', 'load_profiles', 'save_profiles', 'rebuild_profiles',
+__all__ = ['PROFILES_FILE', '_is_unlocked', '_countable_streaming',
+           'load_profiles', 'save_profiles', 'rebuild_profiles',
            'append_run', 'match_or_create', 'node_stability_report',
            'run_compare_report', '_is_peak_hour', 'subscription_group_report',
            'cleanup_outputs']

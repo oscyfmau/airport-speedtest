@@ -503,6 +503,8 @@ async def check_tiktok(session: aiohttp.ClientSession, proxy: str) -> str:
                     region = m.group(1)
                     break
             if resp.status != 200:
+                if resp.status == 403:
+                    return "封锁"  # v4.43.0 修复：403 统一判"封锁"，不再返回渲染器不认的 "(403)"
                 return f"({resp.status})"
             low = text.lower()
             if ("is-verify" in low or "captcha" in low or "access denied" in low) and not region:
@@ -546,6 +548,8 @@ async def check_spotify(session: aiohttp.ClientSession, proxy: str) -> str:
                             return f"可用({m.group(1).upper()})"
                         if resp2.status == 200:
                             return "可用"
+                        if resp2.status == 403:
+                            return "封锁"  # v4.43.0 修复：本检测器 403 与其它检测器同语义
                         return f"({resp2.status})"
                 return "可用"  # 有地区重定向但未携带国家码，视为可访问
             text = await resp.text()
@@ -556,6 +560,8 @@ async def check_spotify(session: aiohttp.ClientSession, proxy: str) -> str:
                 return f"可用({m.group(1).upper()})"
             if resp.status == 200:
                 return "可用"
+            if resp.status == 403:
+                return "封锁"  # v4.43.0 修复：403=封锁，与 check_disney/check_generic 同口径
             return f"({resp.status})"
     except Exception:
         return "错误(连接失败)"
@@ -581,6 +587,8 @@ async def check_steam(session: aiohttp.ClientSession, proxy: str) -> str:
                     return f"可用({code.upper()})"
             if resp.status == 200:
                 return "可用"
+            if resp.status == 403:
+                return "封锁"  # v4.43.0 修复：403=封锁，与 check_disney/check_generic 同口径
             return f"({resp.status})"
     except Exception:
         return "错误(连接失败)"
@@ -607,6 +615,8 @@ async def check_primevideo(session: aiohttp.ClientSession, proxy: str) -> str:
                 return f"可用({region})"
             if resp.status == 200:
                 return "可用"
+            if resp.status == 403:
+                return "封锁"  # v4.43.0 修复：403=封锁，与 check_disney/check_generic 同口径
             return f"({resp.status})"
     except Exception:
         return "错误(连接失败)"
@@ -638,6 +648,8 @@ async def check_max(session: aiohttp.ClientSession, proxy: str) -> str:
                 if m:
                     return f"解锁({m.group(1)})"
                 return "可用"  # v4.37.0：200 但无地区码 → 仅"可用"，不裸判解锁
+            if resp.status == 403:
+                return "封锁"  # v4.43.0 修复：403=封锁，与 check_disney/check_generic 同口径
             return f"({resp.status})"
     except Exception:
         return "错误(连接失败)"

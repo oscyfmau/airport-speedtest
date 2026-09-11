@@ -113,10 +113,56 @@ def resolve_youtube_download_url(timeout: int = 15, proxy: str = None) -> str:
     return ""
 
 
+def _b64_or_plain(v: str) -> str:
+    """Base64 解码参数值，失败回退明文（SSR 的 obfsparam/protoparam 存在明文与缺 padding 写法）"""
+    try:
+        return b64decode_pad(v).decode()
+    except Exception:
+        return v
+
+
+# SIP002 插件名别名：mihomo 侧 ss 插件只认 obfs / v2ray-plugin（obfs-local 会报未知插件）
+_SS_PLUGIN_NAME_ALIASES = {"obfs-local": "obfs", "simple-obfs": "obfs"}
+
+# SIP002 插件选项名 → mihomo plugin-opts 键名：obfs 插件在 mihomo 只认 mode/host，
+# 直接透传 obfs/obfs-host 会被拒（2026-09-12 用 bin/mihomo.exe -t 实测：`obfs mode error`）
+_SS_PLUGIN_OPT_ALIASES = {"obfs": "mode", "obfs-host": "host"}
+
+
+def _parse_ss_plugin(plugin: str):
+    """拆分 SIP002 的 plugin 串为 (插件名, plugin-opts 字典)。
+
+    旧实现把整串（如 `obfs-local;obfs=http;obfs-host=a.com`）直接塞进 `plugin` 字段，
+    mihomo schema 要求 `plugin`=插件名 + 独立 `plugin-opts` 字典，故在此拆分。
+    """
+    segs = [s.strip() for s in (plugin or "").split(";")]
+    segs = [s for s in segs if s]
+    if not segs:
+        return "", {}
+    name = _SS_PLUGIN_NAME_ALIASES.get(segs[0], segs[0])
+    opts = {}
+    for seg in segs[1:]:
+        if "=" in seg:
+            k, v = seg.split("=", 1)
+            k, v = k.strip(), v.strip().strip('"')  # 值不带引号（YAML 侧由 dumper 处理）
+            opts[_SS_PLUGIN_OPT_ALIASES.get(k, k)] = v
+        else:
+            opts[seg] = True  # 裸开关（如 v2ray-plugin 的 tls）
+    return name, opts
+
+
 def parse_vmess(uri: str) -> Optional[ProxyNode]:
     """解析 vmess:// Base64 JSON"""
     try:
         raw = _remove_prefix(uri, "vmess://")
+        # v4.44.0：先剥掉 #fragment——b64 载荷不含 fragment，`vmess://<b64>#香港01`
+        # 会因非 ASCII 字符让 b64decode 抛 ValueError，整条节点被静默丢弃
+        raw, _, frag = raw.partition("#")
+        raw = raw.strip()
+        frag = unquote(frag.strip())
+        if not raw:
+            logger.debug("vmess 链接缺少 Base64 载荷，已跳过")
+            return None
         data = json.loads(b64decode_pad(raw))
         extra = {
             "uuid": data.get("id", ""),
@@ -134,6 +180,23 @@ def parse_vmess(uri: str) -> Optional[ProxyNode]:
             if data.get("fp"):  # v4.42.0：uTLS 指纹透传（v2rayN vmess 的 fp 字段）
                 extra["client-fingerprint"] = data["fp"]
         net = data.get("net", "")
+        # v4.44.0：h2/http 传输此前只写 network，host/path 丢失（mihomo 侧 host 为数组）
+        if net == "h2":
+            opts = {}
+            if data.get("path"):
+                opts["path"] = data["path"]
+            if data.get("host"):
+                opts["host"] = [data["host"]]
+            if opts:
+                extra["h2-opts"] = opts
+        elif net == "http":
+            opts = {}
+            if data.get("path"):
+                opts["path"] = [data["path"]]
+            if data.get("host"):
+                opts["headers"] = {"Host": [data["host"]]}
+            if opts:
+                extra["http-opts"] = opts
         if net == "ws":
             extra["network"] = "ws"
             # v4.42.0：ws-opts 嵌套结构（mihomo 不认扁平 ws-path/ws-headers）
@@ -153,13 +216,14 @@ def parse_vmess(uri: str) -> Optional[ProxyNode]:
                 extra["grpc-opts"] = {"grpc-service-name": svc}
         # VMess "aid" → alterId / alter-id（兼容新旧版）
         return ProxyNode(
-            name=data.get("ps", data.get("add", "")),
+            name=data.get("ps") or frag or data.get("add", ""),
             type="vmess",
             server=data.get("add", ""),
             port=int(data.get("port", 0)),
             extra=extra,
         )
-    except Exception:
+    except Exception as e:
+        logger.debug("vmess 链接解析失败，已跳过: %s", _safe_exc_str(e))
         return None
 
 
@@ -176,6 +240,27 @@ def _parse_userhost_port(uri: str):
     params = parse_qs(parsed.query)
     name = unquote(parsed.fragment) if parsed.fragment else server
     return user, server, port, params, name, parsed
+
+
+def _userinfo_with_password(parsed, user: str) -> str:
+    """拼回完整 userinfo（含冒号后的密码）。
+
+    urllib 把 "user:pa:ss" 拆成 username="user" / password="pa:ss"，只取 username
+    会把密码截断（trojan/hysteria2/anytls 的密码允许含 ':'）。
+    """
+    if parsed.password:
+        pwd = unquote(parsed.password)
+        return (user + ":" + pwd) if user else pwd
+    return user
+
+
+def _is_ip_literal(host: str) -> bool:
+    """判断 host 是否为 IP 字面量（IPv4/IPv6），用于决定是否补 SNI"""
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        return False
 
 
 def parse_vless(uri: str) -> Optional[ProxyNode]:
@@ -231,6 +316,24 @@ def parse_vless(uri: str) -> Optional[ProxyNode]:
             svc = (params.get("serviceName") or params.get("path") or [None])[0]
             if svc:
                 extra["grpc-opts"] = {"grpc-service-name": svc}
+        elif extra["network"] == "h2":
+            # v4.44.0：h2/http 传输此前只写 network，host/path 丢失。
+            # mihomo 实测：h2-opts.host 必须为数组，http-opts.path 必须为数组、host 走 headers.Host
+            opts = {}
+            if params.get("path"):
+                opts["path"] = params["path"][0]
+            if params.get("host"):
+                opts["host"] = [params["host"][0]]
+            if opts:
+                extra["h2-opts"] = opts
+        elif extra["network"] == "http":
+            opts = {}
+            if params.get("path"):
+                opts["path"] = [params["path"][0]]
+            if params.get("host"):
+                opts["headers"] = {"Host": [params["host"][0]]}
+            if opts:
+                extra["http-opts"] = opts
         return ProxyNode(name=name, type="vless", server=server, port=port, extra=extra)
     except Exception:
         return None
@@ -239,8 +342,9 @@ def parse_vless(uri: str) -> Optional[ProxyNode]:
 def parse_trojan(uri: str) -> Optional[ProxyNode]:
     """解析 trojan:// pass@host:port?params#name"""
     try:
-        user, server, port, params, name, _ = _parse_userhost_port(uri)
-        extra = {"password": user}
+        user, server, port, params, name, parsed = _parse_userhost_port(uri)
+        # v4.44.0：密码含 ':' 时（user:pa:ss@host）单取 username 会截断，拼回完整 userinfo
+        extra = {"password": _userinfo_with_password(parsed, user)}
         if params.get("sni"):
             extra["sni"] = params["sni"][0]
         if params.get("fp"):  # v4.42.0：uTLS 指纹透传（与 vless/anytls 口径一致）
@@ -266,7 +370,8 @@ def parse_ss(uri: str) -> Optional[ProxyNode]:
         # 尝试 SIP002 标准: ss://base64(method:password)@host:port
         if "@" in raw:
             # method:password@host:port 格式
-            user_info, host_port = raw.split("@", 1)
+            # v4.44.0：按最后一个 @ 切分（明文密码含 @ 时旧的 split("@", 1) 会把 host 切进密码）
+            user_info, host_port = raw.rsplit("@", 1)
             # user_info 可能是 base64 编码
             try:
                 decoded = b64decode_pad(user_info).decode()
@@ -286,17 +391,21 @@ def parse_ss(uri: str) -> Optional[ProxyNode]:
         else:
             # 纯 base64: ss://base64(method:password@host:port)
             decoded = b64decode_pad(raw).decode()
-            # method:password@host:port
-            user_info, host_port = decoded.split("@", 1)
+            # method:password@host:port（按最后一个 @ 切分，密码可含 @）
+            user_info, host_port = decoded.rsplit("@", 1)
             method, password = user_info.split(":", 1)
             hp = host_port.rsplit(":", 1)
             server = hp[0].strip("[]")  # IPv6 剥离方括号
             port = int(hp[1]) if len(hp) > 1 else 443
-        # SIP002 插件参数
+        # SIP002 插件参数（v4.44.0：拆为 plugin + plugin-opts，旧实现整串塞进 plugin）
         params = parse_qs(parsed.query)
         extra = {"cipher": method, "password": password}
         if params.get("plugin"):
-            extra["plugin"] = params["plugin"][0]
+            plugin_name, plugin_opts = _parse_ss_plugin(params["plugin"][0])
+            if plugin_name:
+                extra["plugin"] = plugin_name
+            if plugin_opts:
+                extra["plugin-opts"] = plugin_opts
         node_name = name or server
         return ProxyNode(name=node_name, type="ss", server=server, port=port, extra=extra)
     except Exception:
@@ -307,6 +416,12 @@ def parse_ssr(uri: str) -> Optional[ProxyNode]:
     """解析 ssr:// Base64 编码"""
     try:
         raw = _remove_prefix(uri, "ssr://")
+        # v4.44.0：先剥掉 #fragment——b64 载荷不含 fragment，非 ASCII 名字（`ssr://<b64>#香港`）
+        # 会让 b64decode 抛 ValueError，整条节点被静默丢弃
+        raw = raw.split("#", 1)[0].strip()
+        if not raw:
+            logger.debug("ssr 链接缺少 Base64 载荷，已跳过")
+            return None
         decoded = b64decode_pad(raw).decode()
         # 格式: server:port:protocol:method:obfs:base64pass/?params
         parts = decoded.split("/?", 1)
@@ -330,40 +445,42 @@ def parse_ssr(uri: str) -> Optional[ProxyNode]:
             "obfs": obfs,
         }
         node_name = server
+        remarks_name = ""
+        group_name = ""
         if len(parts) > 1:
             params = parts[1]
             for param in params.split("&"):
                 if "=" in param:
                     k, v = param.split("=", 1)
-                    if k == "obfsparam":
-                        try:
-                            extra[k] = b64decode_pad(v).decode()
-                        except Exception:
-                            extra[k] = v  # 明文值（如 tls1.2_ticket_auth）直接保留
+                    if k in ("obfsparam", "obfs-param"):
+                        # v4.44.0：键名改 mihomo 口径 obfs-param（mihomo 无 obfsparam）
+                        extra["obfs-param"] = _b64_or_plain(v)
+                    elif k in ("protoparam", "protocol-param"):
+                        # v4.44.0：键名改 protocol-param，且与 obfsparam 一样走 b64 解码（失败回退明文）
+                        extra["protocol-param"] = _b64_or_plain(v)
                     elif k == "group":
-                        # SSR group 参数（base64）作为节点友好名
-                        try:
-                            node_name = b64decode_pad(v).decode() or server
-                        except Exception:
-                            pass
+                        # SSR group 参数（base64）作为备用节点名
+                        group_name = _b64_or_plain(v)
                     elif k == "remarks":
-                        # remarks 参数（base64 节点名）：优先于默认名
-                        try:
-                            node_name = b64decode_pad(v).decode() or node_name
-                        except Exception:
-                            pass
+                        # remarks 参数（base64 节点名）：优先级高于 group
+                        remarks_name = _b64_or_plain(v)
                     else:
                         extra[k] = v
+        # v4.44.0：名字优先级 remarks > group > server
+        # （旧实现顺序赋值、后者覆盖，实测 <group=机场A> 会把 <remarks=香港SSR> 盖掉）
+        node_name = remarks_name or group_name or server
         return ProxyNode(name=node_name, type="ssr", server=server, port=int(port), extra=extra)
-    except Exception:
+    except Exception as e:
+        logger.debug("ssr 链接解析失败，已跳过: %s", _safe_exc_str(e))
         return None
 
 
 def parse_hysteria2(uri: str) -> Optional[ProxyNode]:
     """解析 hysteria2:// pass@host:port?params#name"""
     try:
-        user, server, port, params, name, _ = _parse_userhost_port(uri)
-        extra = {"password": user}
+        user, server, port, params, name, parsed = _parse_userhost_port(uri)
+        # v4.44.0：密码含 ':' 时单取 username 会截断（同 trojan/anytls）
+        extra = {"password": _userinfo_with_password(parsed, user)}
         if params.get("sni"):
             extra["sni"] = params["sni"][0]
         if params.get("insecure"):
@@ -430,8 +547,9 @@ def parse_tuic(uri: str) -> Optional[ProxyNode]:
 def parse_anytls(uri: str) -> Optional[ProxyNode]:
     """解析 anytls:// pass@host:port?params#name"""
     try:
-        user, server, port, params, name, _ = _parse_userhost_port(uri)
-        extra = {"password": user}
+        user, server, port, params, name, parsed = _parse_userhost_port(uri)
+        # v4.44.0：密码含 ':' 时单取 username 会截断（同 trojan/hysteria2）
+        extra = {"password": _userinfo_with_password(parsed, user)}
         if params.get("sni"):
             extra["sni"] = params["sni"][0]
         if params.get("insecure") or params.get("allowInsecure"):
@@ -461,14 +579,20 @@ def parse_wireguard(uri: str) -> Optional[ProxyNode]:
             pk = params.get("privateKey") or params.get("private-key")
             if pk:
                 extra["private-key"] = unquote(pk[0])
+        # v4.44.0：公开密钥也支持从 query 读（publicKey / public-key）
+        if not extra.get("public-key"):
+            pub = params.get("publicKey") or params.get("public-key")
+            if pub:
+                extra["public-key"] = unquote(pub[0])
         if params.get("address"):
             extra["ip"] = params["address"][0]
         if params.get("dns"):
             extra["dns"] = params["dns"][0]
         if params.get("mtu"):
             extra["mtu"] = int(params["mtu"][0])
+        # v4.44.0：缺省端口改 wireguard 标准 51820（旧值 443）
         return ProxyNode(name=name, type="wireguard", server=parsed.hostname or "",
-                        port=parsed.port or 443, extra=extra)
+                        port=parsed.port or 51820, extra=extra)
     except Exception:
         return None
 
@@ -551,12 +675,19 @@ def parse_http(uri: str) -> Optional[ProxyNode]:
     """解析 http:// / https://"""
     try:
         parsed = urlparse(uri)
-        extra = {}
+        extra: dict = {}
         if parsed.username:
             extra["username"] = unquote(parsed.username)
         if parsed.password:
             extra["password"] = unquote(parsed.password)
         name = unquote(parsed.fragment) if parsed.fragment else parsed.hostname or ""
+        # v4.44.0：https 补 tls（旧实现 http/https 输出完全相同，TLS 语义丢失）
+        if (parsed.scheme or "").lower() == "https":
+            extra["tls"] = True
+            host = parsed.hostname or ""
+            # SNI 仅对域名有意义（IP 字面量不得补 sni）
+            if host and not _is_ip_literal(host):
+                extra["sni"] = host
         return ProxyNode(
             name=name,
             type="http",
@@ -906,8 +1037,13 @@ def _is_valid_node(n: ProxyNode) -> bool:
             return False
     except ValueError:
         pass  # 域名（非 IP），放行；DNS 层解析结果不在解析器可控范围
-    # 排除端口 0
-    if n.port == 0:
+    # 排除端口越界（v4.44.0：原只判 ==0，70000/-1 等越界端口会直接让 mihomo 整份配置加载失败）
+    try:
+        port_ok = 1 <= int(n.port) <= 65535
+    except (TypeError, ValueError):
+        port_ok = False
+    if not port_ok:
+        logger.warning("节点 %s 端口 %s 越界（需 1-65535），已过滤", n.name, n.port)
         return False
     # 排除名字含关键词的信息行
     skip_keywords = ["剩余流量", "套餐到期", "重置", "客户端不支持", "请用官网"]
@@ -987,4 +1123,4 @@ def read_subscribe_urls() -> list[str]:
             urls.append(line)
     return urls
 
-__all__ = ['_parse_userinfo', '_YtDlpNullLogger', 'resolve_youtube_download_url', 'parse_vmess', '_parse_userhost_port', 'parse_vless', 'parse_trojan', 'parse_ss', 'parse_ssr', 'parse_hysteria2', 'parse_hysteria', '_parse_uuid_password', 'parse_tuic', 'parse_anytls', 'parse_wireguard', 'parse_naive', 'parse_shadowtls', 'parse_juicity', 'parse_ssh', 'parse_socks', 'parse_http', 'PARSERS', 'URI_PATTERN', '_looks_like_yaml', 'detect_and_decode', '_try_fetch', 'parse_subscription_url', 'parse_subscription_content', '_dedupe_nodes', 'parse_subscription_urls', '_fetch_sub_usage', 'MIHOMO_SUPPORTED_TYPES', '_is_valid_node', '_yaml_to_node', 'parse_node_uri', 'read_subscribe_urls']
+__all__ = ['_parse_userinfo', '_YtDlpNullLogger', 'resolve_youtube_download_url', '_b64_or_plain', '_SS_PLUGIN_NAME_ALIASES', '_SS_PLUGIN_OPT_ALIASES', '_parse_ss_plugin', 'parse_vmess', '_parse_userhost_port', '_userinfo_with_password', '_is_ip_literal', 'parse_vless', 'parse_trojan', 'parse_ss', 'parse_ssr', 'parse_hysteria2', 'parse_hysteria', '_parse_uuid_password', 'parse_tuic', 'parse_anytls', 'parse_wireguard', 'parse_naive', 'parse_shadowtls', 'parse_juicity', 'parse_ssh', 'parse_socks', 'parse_http', 'PARSERS', 'URI_PATTERN', '_looks_like_yaml', 'detect_and_decode', '_try_fetch', 'parse_subscription_url', 'parse_subscription_content', '_dedupe_nodes', 'parse_subscription_urls', '_fetch_sub_usage', 'MIHOMO_SUPPORTED_TYPES', '_is_valid_node', '_yaml_to_node', 'parse_node_uri', 'read_subscribe_urls']
